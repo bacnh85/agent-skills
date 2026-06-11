@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "skills": {
+    "obsidian": {
+      "name": "obsidian",
+      "category": "productivity",
+      "hash": "beffea93a378c15dd477cd8d706264ed2775528f1412b2b4fccccf454ced174d",
+      "source": "git@github.com:NousResearch/hermes-agent.git",
+      "sourceType": "git",
+      "sourcePath": "skills/note-taking/obsidian/SKILL.md",
+      "firstPromotedAt": "2026-06-11T14:33:37.078Z",
+      "updatedAt": "2026-06-11T14:33:37.078Z",
+      "latestScope": "project"
+    },
+    "find-skills": {
+      "name": "find-skills",
+      "category": "productivity",
+      "hash": "5fa76f17586e0a085649abb12a8d5d5485f53f0cb58dc7d61e160fd357444598",
+      "source": ".",
+      "sourceType": "git",
+      "firstPromotedAt": "2026-06-11T15:14:53.545Z",
+      "updatedAt": "2026-06-11T15:14:53.545Z",
+      "latestScope": "global"
+    }
+  }
+}
