@@ -1,4 +1,0 @@
-interface:
-  display_name: "Promote Skills"
-  short_description: "Promote installed skills into the central repository"
-  default_prompt: "Use $promote-skills to list and promote installed agent skills with verified provenance."

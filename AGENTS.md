@@ -111,3 +111,6 @@ If the skill requires network access, instruct users to add required domains at 
 
 - CLI modules that expose test helpers should guard runtime execution with an import-safe entrypoint check, so tests can import parser and state helpers without invoking the command.
 - Do not run `npx skills add` directly to probe its terminal UX; agent detection can make it install non-interactively. Inspect upstream source or use an isolated, explicitly controlled harness instead.
+- Wrapper commands for the upstream `skills` CLI should share one cross-platform invocation builder, inherit stdio for interactive commands, and preserve upstream exit statuses.
+- Build scripts must remove stale TypeScript output before running compiled test globs, or deleted source tests can continue executing from `dist`.
+- Temporary Git repositories used in tests must set `commit.gpgsign=false` so developer signing configuration cannot make fixtures fail.

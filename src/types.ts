@@ -1,48 +1,44 @@
-export const CATEGORIES = [
-  "agent-tooling",
-  "development",
-  "research",
-  "productivity",
-  "content",
-  "operations"
-] as const;
+export type SourceType = "git" | "local";
 
-export type Category = (typeof CATEGORIES)[number];
-export type Scope = "project" | "global";
+export interface DiscoveredSkill {
+  name: string;
+  absolutePath: string;
+  relativePath: string;
+}
 
-export interface InstalledSkill {
+export interface ResolvedSource {
+  source: string;
+  sourceType: SourceType;
+  root: string;
+  ref?: string;
+  commit?: string;
+  directPath?: string;
+  cleanup(): void;
+}
+
+export interface RegistryEntry {
   name: string;
   path: string;
-  scope: Scope;
-  agents: string[];
-}
-
-export interface Provenance {
   source: string;
-  sourceType: string;
+  sourceType: SourceType;
   sourcePath?: string;
-}
-
-export interface RegistryEntry extends Provenance {
-  name: string;
-  category: Category;
+  ref?: string;
+  commit?: string;
   hash: string;
-  firstPromotedAt: string;
+  addedAt: string;
   updatedAt: string;
-  latestScope: Scope;
+  updatable: boolean;
 }
 
 export interface Registry {
-  version: 1;
+  version: 2;
   skills: Record<string, RegistryEntry>;
 }
 
-export interface PromotionResult {
+export interface OperationResult {
   name: string;
-  action: "created" | "updated" | "unchanged";
-  category: Category;
-  destination: string;
-  hash: string;
-  provenance: Provenance;
-  dryRun: boolean;
+  action: "added" | "updated" | "removed" | "unchanged" | "skipped";
+  message?: string;
+  path?: string;
+  hash?: string;
 }

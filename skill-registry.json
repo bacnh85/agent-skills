@@ -1,26 +1,18 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
-    "obsidian": {
-      "name": "obsidian",
-      "category": "productivity",
-      "hash": "beffea93a378c15dd477cd8d706264ed2775528f1412b2b4fccccf454ced174d",
-      "source": "git@github.com:NousResearch/hermes-agent.git",
+    "frontend-design": {
+      "name": "frontend-design",
+      "path": "skills/frontend-design",
+      "source": "https://github.com/anthropics/skills.git",
       "sourceType": "git",
-      "sourcePath": "skills/note-taking/obsidian/SKILL.md",
-      "firstPromotedAt": "2026-06-11T14:33:37.078Z",
-      "updatedAt": "2026-06-11T14:33:37.078Z",
-      "latestScope": "project"
-    },
-    "find-skills": {
-      "name": "find-skills",
-      "category": "productivity",
-      "hash": "5fa76f17586e0a085649abb12a8d5d5485f53f0cb58dc7d61e160fd357444598",
-      "source": ".",
-      "sourceType": "git",
-      "firstPromotedAt": "2026-06-11T15:14:53.545Z",
-      "updatedAt": "2026-06-11T15:14:53.545Z",
-      "latestScope": "global"
+      "sourcePath": "skills/frontend-design",
+      "ref": "main",
+      "commit": "57546260929473d4e0d1c1bb75297be2fdfa1949",
+      "hash": "c3c0bb0ab2632ca396f7ac7cd0d384d1b3d3ec8549f5614711a62b0ce70aa8ea",
+      "addedAt": "2026-06-12T08:27:54.262Z",
+      "updatedAt": "2026-06-12T08:27:54.262Z",
+      "updatable": true
     }
   }
 }

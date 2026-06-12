@@ -1,114 +1,49 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { resolveCentralRepo } from "./config.js";
-import { defaultScope, listInstalled, resolveProvenance } from "./discovery.js";
-import { promoteSkill } from "./promote.js";
+import pc from "picocolors";
+import { resolveTargetRepo } from "./config.js";
+import { discoverSkills, resolveSource } from "./discovery.js";
+import { addSkills, removeSkills, updateSkills } from "./manager.js";
+import { readRegistry } from "./registry.js";
+import type { RegistryEntry } from "./types.js";
 import {
-  confirmPromotion,
-  promoteWithProgress,
-  selectSkills,
-  showAutoSelection,
-  showCancellation,
-  showPromoteIntro,
-  showPromotionResults,
-  startDiscoverySpinner
-} from "./promote-ui.js";
-import { inferCategory, validateSkill } from "./skill.js";
-import {
-  CATEGORIES,
-  type Category,
-  type InstalledSkill,
-  type Scope
-} from "./types.js";
+  formatOperationResult,
+  runOperation,
+  selectDiscoveredSkills,
+  selectRegistrySkills
+} from "./ui.js";
 
-interface Args {
-  command?: string;
-  names: string[];
-  scope?: Scope | "all";
-  json: boolean;
-  yes: boolean;
-  dryRun: boolean;
-  repo?: string;
-  category?: Category;
-  source?: string;
-  allowSourceChange: boolean;
+export interface Args {
+  command?: "add" | "remove" | "list" | "update";
+  values: string[];
 }
 
-function usage(): string {
+export function usage(): string {
   return `Usage:
-  agent-skills list [--scope project|global|all] [--json]
-  agent-skills promote [skills...] [--scope project|global|all] [--category <category>]
-                       [--source <url>] [--repo <path>] [--dry-run] [--yes] [--json]
-
-Categories: ${CATEGORIES.join(", ")}`;
+  agent-skills add <source>
+  agent-skills remove [skills...]
+  agent-skills list
+  agent-skills update [skills...]`;
 }
 
 export function parseArgs(argv: string[]): Args {
-  if (argv[0] === "--help" || argv[0] === "-h") {
-    console.log(usage());
-    process.exit(0);
+  if (!argv.length) return { values: [] };
+  if (argv[0] === "--help" || argv[0] === "-h") return { values: [] };
+  const command = argv[0];
+  if (!["add", "remove", "list", "update"].includes(command)) {
+    throw new Error(`Unknown command: ${command}`);
   }
-  const result: Args = {
-    command: argv.shift(),
-    names: [],
-    json: false,
-    yes: false,
-    dryRun: false,
-    allowSourceChange: false
-  };
-  while (argv.length) {
-    const value = argv.shift()!;
-    if (!value.startsWith("-")) {
-      result.names.push(value);
-      continue;
-    }
-    if (value === "--json") result.json = true;
-    else if (value === "--yes" || value === "-y") result.yes = true;
-    else if (value === "--dry-run") result.dryRun = true;
-    else if (value === "--allow-source-change") result.allowSourceChange = true;
-    else if (value === "--scope") result.scope = argv.shift() as Args["scope"];
-    else if (value === "--repo") result.repo = argv.shift();
-    else if (value === "--source") result.source = argv.shift();
-    else if (value === "--category") result.category = argv.shift() as Category;
-    else if (value === "--help" || value === "-h") {
-      console.log(usage());
-      process.exit(0);
-    } else throw new Error(`Unknown option: ${value}`);
+  const values = argv.slice(1);
+  const option = values.find((value) => value.startsWith("-"));
+  if (option) throw new Error(`Unknown option: ${option}`);
+  if (command === "add" && values.length !== 1) {
+    throw new Error("Usage: agent-skills add <source>");
   }
-  if (result.scope && !["project", "global", "all"].includes(result.scope)) {
-    throw new Error(`Invalid scope: ${result.scope}`);
+  if (command === "list" && values.length) {
+    throw new Error("agent-skills list does not accept arguments.");
   }
-  if (result.category && !CATEGORIES.includes(result.category)) {
-    throw new Error(`Invalid category: ${result.category}`);
-  }
-  return result;
-}
-
-function discover(scope: Scope | "all"): InstalledSkill[] {
-  return scope === "all"
-    ? [...listInstalled("project"), ...listInstalled("global")]
-    : listInstalled(scope);
-}
-
-export function shouldSelectInteractively(args: Args, isTTY: boolean): boolean {
-  return args.command === "promote" && !args.names.length && !args.yes && isTTY;
-}
-
-export function shouldUsePromoteUI(args: Args, isTTY: boolean): boolean {
-  return args.command === "promote" && !args.json && isTTY;
-}
-
-export function duplicateSkillNames(skills: InstalledSkill[]): string[] {
-  return [
-    ...new Set(
-      skills
-        .filter((skill, index, values) =>
-          values.findIndex((candidate) => candidate.name === skill.name) !== index
-        )
-        .map((skill) => skill.name)
-    )
-  ];
+  return { command: command as Args["command"], values };
 }
 
 export function isCliEntrypoint(moduleUrl: string, argvPath?: string): boolean {
@@ -120,107 +55,120 @@ export function isCliEntrypoint(moduleUrl: string, argvPath?: string): boolean {
   }
 }
 
+export function formatRegistryList(entries: RegistryEntry[]): string {
+  if (!entries.length) return pc.dim("No project skills found.");
+
+  const rows = [...entries]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((entry) => ({
+      name: entry.name,
+      path: entry.path,
+      source: entry.source || "-",
+      ref: entry.ref || "-",
+      commit: entry.commit?.slice(0, 12) || "-",
+      updatedAt: entry.updatedAt || "-"
+    }));
+  const width = (values: string[]) => Math.max(...values.map((value) => value.length));
+  const widths = {
+    name: width(rows.map((row) => row.name)),
+    path: width(rows.map((row) => row.path)),
+    source: width(rows.map((row) => row.source)),
+    ref: width(rows.map((row) => row.ref)),
+    commit: width(rows.map((row) => row.commit))
+  };
+  const lines = rows.map((row) =>
+    [
+      pc.cyan(row.name.padEnd(widths.name)),
+      pc.dim(row.path.padEnd(widths.path)),
+      `${pc.dim("Source:")} ${row.source.padEnd(widths.source)}`,
+      `${pc.dim("Ref:")} ${row.ref.padEnd(widths.ref)}`,
+      `${pc.dim("Commit:")} ${row.commit.padEnd(widths.commit)}`,
+      `${pc.dim("Updated:")} ${row.updatedAt}`
+    ].join("  ")
+  );
+
+  return [pc.bold("Project Skills"), "", ...lines, ""].join("\n");
+}
+
+function printResults(results: ReturnType<typeof addSkills>): void {
+  for (const result of results) {
+    console.log(formatOperationResult(result));
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (!args.command) {
     console.log(usage());
     return;
   }
-  const humanPromote = shouldUsePromoteUI(args, Boolean(process.stdout.isTTY));
-  if (humanPromote) showPromoteIntro();
-  const discoveryProgress = humanPromote ? startDiscoverySpinner() : undefined;
-  const installed = discover(args.scope ?? defaultScope(args.command));
-  discoveryProgress?.stop(
-    `Found ${installed.length} installed skill${installed.length === 1 ? "" : "s"}`
-  );
+  const repo = resolveTargetRepo();
+  const interactive = Boolean(process.stdout.isTTY);
   if (args.command === "list") {
-    const candidates = installed.map((skill) => {
-      const suggestion = inferCategory(validateSkill(skill.path, skill.name));
-      return {
-        ...skill,
-        suggestedCategory: suggestion.category,
-        confident: suggestion.confident
-      };
-    });
-    if (args.json) console.log(JSON.stringify(candidates, null, 2));
-    else {
-      for (const skill of candidates) {
-        console.log(
-          `${skill.name}\t${skill.scope}\t${skill.suggestedCategory ?? "uncategorized"}${skill.confident ? "" : " (review)"}\t${skill.path}`
-        );
-      }
-    }
+    console.log(formatRegistryList(Object.values(readRegistry(repo).skills)));
     return;
   }
-  if (args.command !== "promote") throw new Error(`Unknown command: ${args.command}`);
-
-  let selected = installed.filter((skill) => args.names.includes(skill.name));
-  const usedInteractiveSelection = shouldSelectInteractively(args, Boolean(process.stdin.isTTY));
-  if (usedInteractiveSelection) {
-    if (installed.length === 1) showAutoSelection(installed[0]);
-    const selection = await selectSkills(installed);
-    if (selection.cancelled) {
-      showCancellation();
-      return;
+  if (args.command === "remove") {
+    let names = args.values;
+    if (!names.length) {
+      if (!process.stdin.isTTY) {
+        throw new Error("No skills specified and interactive selection is unavailable.");
+      }
+      names = await selectRegistrySkills(Object.values(readRegistry(repo).skills));
+      if (!names.length) return;
     }
-    selected = selection.skills;
-  }
-  if (!selected.length) {
-    if (usedInteractiveSelection) {
-      showCancellation();
-      return;
-    }
-    throw new Error("No matching skills selected.");
-  }
-  const duplicateNames = duplicateSkillNames(selected);
-  if (duplicateNames.length) {
-    throw new Error(
-      `Skills installed in both project and global scope are ambiguous: ${duplicateNames.join(", ")}. Pass --scope project or --scope global.`
+    const count = names.length;
+    printResults(
+      runOperation(
+        `Removing ${count} skill${count === 1 ? "" : "s"}...`,
+        `Removed ${count} skill${count === 1 ? "" : "s"}`,
+        interactive,
+        () => removeSkills(repo, names)
+      )
     );
+    return;
+  }
+  if (args.command === "update") {
+    const count = args.values.length || Object.keys(readRegistry(repo).skills).length;
+    printResults(
+      runOperation(
+        `Updating ${count} skill${count === 1 ? "" : "s"}...`,
+        `Checked ${count} skill${count === 1 ? "" : "s"}`,
+        interactive,
+        (progress) =>
+          updateSkills(repo, args.values, (name, index, total) => {
+            progress.message(`Updating ${name} (${index}/${total})...`);
+          })
+      )
+    );
+    return;
   }
 
-  const repo = resolveCentralRepo({ repo: args.repo });
-  const prepared = selected.map((skill) => {
-    const inferred = inferCategory(validateSkill(skill.path, skill.name));
-    const category = args.category ?? inferred.category;
-    if (!category || (!args.category && !inferred.confident)) {
-      throw new Error(
-        `Category for "${skill.name}" requires review. Pass --category <category>.`
-      );
+  const source = resolveSource(args.values[0]);
+  try {
+    const discovered = discoverSkills(source);
+    if (!discovered.length) throw new Error("No skills found in source.");
+    let selected = discovered;
+    if (discovered.length > 1) {
+      if (!process.stdin.isTTY) {
+        throw new Error(
+          `Source contains ${discovered.length} skills; interactive selection requires a TTY. Use a direct skill URL or path.`
+        );
+      }
+      selected = await selectDiscoveredSkills(discovered);
+      if (!selected.length) return;
     }
-    return {
-      skill,
-      category,
-      provenance: resolveProvenance(skill, args.source)
-    };
-  });
-
-  if (!args.yes && !args.dryRun) {
-    if (!(await confirmPromotion(prepared, repo))) {
-      showCancellation();
-      return;
-    }
-  }
-
-  const runPromotion = (item: (typeof prepared)[number]) =>
-    promoteSkill({
-      ...item,
-      repo,
-      dryRun: args.dryRun,
-      allowSourceChange: args.allowSourceChange
-    });
-  const results =
-    humanPromote && !args.json
-      ? promoteWithProgress(prepared, runPromotion)
-      : prepared.map(runPromotion);
-  if (args.json) console.log(JSON.stringify(results, null, 2));
-  else if (humanPromote) showPromotionResults(results);
-  else {
-    for (const result of results) {
-      console.log(
-        `${result.action}: ${result.name} -> ${result.destination} (${result.hash.slice(0, 12)})${result.dryRun ? " [dry-run]" : ""}`
-      );
-    }
+    const count = selected.length;
+    printResults(
+      runOperation(
+        `Adding ${count} skill${count === 1 ? "" : "s"}...`,
+        `Added ${count} skill${count === 1 ? "" : "s"}`,
+        interactive,
+        () => addSkills({ repo, source, selected })
+      )
+    );
+  } finally {
+    source.cleanup();
   }
 }
 

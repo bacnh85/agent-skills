@@ -1,7 +1,7 @@
 {
   "name": "@bacnh85/agent-skills",
   "version": "0.1.0",
-  "description": "Promote installed agent skills into a categorized central repository.",
+  "description": "Manage repository-based AI agent skills from git and local sources.",
   "type": "module",
   "publishConfig": {
     "access": "public"
@@ -11,7 +11,7 @@
   },
   "files": ["dist", "skills"],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/src/cli.js',0o755)\"",
     "prepare": "npm run build",
     "test": "npm run build && node --test dist/test/*.test.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"

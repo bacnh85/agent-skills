@@ -1,3 +1,6 @@
 
 {"version":1,"timestamp":"2026-06-11T14:33:37.078Z","action":"created","skill":"obsidian","category":"productivity","newHash":"beffea93a378c15dd477cd8d706264ed2775528f1412b2b4fccccf454ced174d","source":"git@github.com:NousResearch/hermes-agent.git","sourceType":"git","sourcePath":"skills/note-taking/obsidian/SKILL.md","scope":"project","cliVersion":"0.1.0"}
 {"version":1,"timestamp":"2026-06-11T15:14:53.545Z","action":"created","skill":"find-skills","category":"productivity","newHash":"5fa76f17586e0a085649abb12a8d5d5485f53f0cb58dc7d61e160fd357444598","source":".","sourceType":"git","scope":"global","cliVersion":"0.1.0"}
+{"version":2,"timestamp":"2026-06-12T08:27:54.273Z","action":"add","skill":"frontend-design","path":"skills/frontend-design","source":"https://github.com/anthropics/skills.git","ref":"main","commit":"57546260929473d4e0d1c1bb75297be2fdfa1949","hash":"c3c0bb0ab2632ca396f7ac7cd0d384d1b3d3ec8549f5614711a62b0ce70aa8ea"}
+{"version":2,"timestamp":"2026-06-12T08:28:46.145Z","action":"remove","skill":"find-skills"}
+{"version":2,"timestamp":"2026-06-12T08:29:11.560Z","action":"remove","skill":"obsidian"}

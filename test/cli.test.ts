@@ -4,63 +4,103 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
-import {
-  duplicateSkillNames,
-  isCliEntrypoint,
-  parseArgs,
-  shouldSelectInteractively,
-  shouldUsePromoteUI
-} from "../src/cli.js";
-import { defaultScope } from "../src/discovery.js";
-import type { InstalledSkill } from "../src/types.js";
+import { formatRegistryList, isCliEntrypoint, parseArgs } from "../src/cli.js";
+import type { RegistryEntry } from "../src/types.js";
 
-test("promotion searches all scopes by default while listing remains project-scoped", () => {
-  assert.equal(defaultScope("promote"), "all");
-  assert.equal(defaultScope("list"), "project");
+function registryEntry(overrides: Partial<RegistryEntry>): RegistryEntry {
+  return {
+    name: "example",
+    path: "skills/example",
+    source: "owner/repo",
+    sourceType: "git",
+    hash: "hash",
+    addedAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-02T00:00:00.000Z",
+    updatable: true,
+    ...overrides
+  };
+}
+
+test("parser accepts only add, remove, list, and update", () => {
+  assert.deepEqual(parseArgs(["add", "./skills"]), {
+    command: "add",
+    values: ["./skills"]
+  });
+  assert.deepEqual(parseArgs(["remove", "a", "b"]), {
+    command: "remove",
+    values: ["a", "b"]
+  });
+  assert.deepEqual(parseArgs(["list"]), { command: "list", values: [] });
+  assert.deepEqual(parseArgs(["update"]), { command: "update", values: [] });
+  assert.throws(() => parseArgs(["promote"]), /Unknown command/);
+  assert.throws(() => parseArgs(["add", "x", "--yes"]), /Unknown option/);
+  assert.throws(() => parseArgs(["list", "-g"]), /Unknown option: -g/);
+  assert.throws(() => parseArgs(["list", "extra"]), /does not accept arguments/);
 });
 
-test("positional promotion names bypass interactive selection", () => {
-  const args = parseArgs(["promote", "demo"]);
-  assert.equal(shouldSelectInteractively(args, true), false);
+test("registry list sorts entries and aligns labeled fields", () => {
+  const output = formatRegistryList([
+    registryEntry({
+      name: "z",
+      path: "skills/z",
+      source: "long-owner/long-repository",
+      ref: "main",
+      commit: "1234567890abcdef",
+      updatedAt: "2026-02-03T04:05:06.000Z"
+    }),
+    registryEntry({
+      name: "alpha",
+      path: "skills/category/alpha",
+      source: "repo",
+      ref: "dev",
+      commit: "abcdef1234567890",
+      updatedAt: "2026-01-02T03:04:05.000Z"
+    })
+  ]);
+  const lines = output.split("\n");
+
+  assert.equal(lines[0], "Project Skills");
+  assert.equal(lines[1], "");
+  assert.match(lines[2], /^alpha\s+skills\/category\/alpha\s+Source: repo/);
+  assert.match(lines[3], /^z\s+skills\/z\s+Source: long-owner\/long-repository/);
+  for (const label of ["Source:", "Ref:", "Commit:", "Updated:"]) {
+    assert.equal(lines[2].indexOf(label), lines[3].indexOf(label));
+  }
+  assert.match(lines[2], /Commit: abcdef123456/);
+  assert.match(lines[3], /Commit: 1234567890ab/);
 });
 
-test("yes promotion without names bypasses interactive selection", () => {
-  const args = parseArgs(["promote", "--yes"]);
-  assert.equal(shouldSelectInteractively(args, true), false);
+test("registry list represents missing fields with fallbacks", () => {
+  const output = formatRegistryList([
+    registryEntry({
+      source: "",
+      ref: undefined,
+      commit: undefined,
+      updatedAt: ""
+    })
+  ]);
+
+  assert.match(
+    output,
+    /Source: -\s+Ref: -\s+Commit: -\s+Updated: -/
+  );
 });
 
-test("non-TTY promotion bypasses interactive selection", () => {
-  const args = parseArgs(["promote"]);
-  assert.equal(shouldSelectInteractively(args, false), false);
+test("registry list reports an empty registry", () => {
+  assert.equal(formatRegistryList([]), "No project skills found.");
 });
 
-test("JSON promotion suppresses branded UI", () => {
-  assert.equal(shouldUsePromoteUI(parseArgs(["promote", "--json"]), true), false);
-  assert.equal(shouldUsePromoteUI(parseArgs(["promote"]), true), true);
-  assert.equal(shouldUsePromoteUI(parseArgs(["list"]), true), false);
-});
-
-test("CLI entrypoint detection follows npm global install symlinks", () => {
+test("CLI entrypoint detection follows install symlinks", () => {
   const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-"));
   try {
-    const targetDirectory = join(root, "package", "dist", "src");
-    const binDirectory = join(root, "bin");
-    mkdirSync(targetDirectory, { recursive: true });
-    mkdirSync(binDirectory);
-    const target = join(targetDirectory, "cli.js");
-    const link = join(binDirectory, "agent-skills");
+    const target = join(root, "package", "cli.js");
+    const link = join(root, "bin", "agent-skills");
+    mkdirSync(join(root, "package"), { recursive: true });
+    mkdirSync(join(root, "bin"));
     writeFileSync(target, "#!/usr/bin/env node\n");
     symlinkSync(target, link);
     assert.equal(isCliEntrypoint(pathToFileURL(target).href, link), true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-});
-
-test("duplicate skill names across scopes remain ambiguous after selection", () => {
-  const installed: InstalledSkill[] = [
-    { name: "demo", path: "/tmp/project-demo", scope: "project", agents: [] },
-    { name: "demo", path: "/tmp/global-demo", scope: "global", agents: [] }
-  ];
-  assert.deepEqual(duplicateSkillNames(installed), ["demo"]);
 });
