@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,7 +22,7 @@ function registryEntry(overrides: Partial<RegistryEntry>): RegistryEntry {
   };
 }
 
-test("parser accepts only add, remove, list, and update", () => {
+test("parser accepts repository management and install commands", () => {
   assert.deepEqual(parseArgs(["add", "./skills"]), {
     command: "add",
     values: ["./skills"]
@@ -32,10 +33,47 @@ test("parser accepts only add, remove, list, and update", () => {
   });
   assert.deepEqual(parseArgs(["list"]), { command: "list", values: [] });
   assert.deepEqual(parseArgs(["update"]), { command: "update", values: [] });
+  assert.deepEqual(parseArgs(["install"]), {
+    command: "install",
+    values: [],
+    all: false,
+    global: false
+  });
+  assert.deepEqual(parseArgs(["install", "-g", "--all"]), {
+    command: "install",
+    values: [],
+    all: true,
+    global: true
+  });
+  assert.deepEqual(parseArgs(["uninstall", "demo", "notes", "-g"]), {
+    command: "uninstall",
+    values: ["demo", "notes"],
+    all: false,
+    global: true
+  });
+  assert.deepEqual(parseArgs(["uninstall"]), {
+    command: "uninstall",
+    values: [],
+    all: false,
+    global: false
+  });
+  assert.deepEqual(parseArgs(["uninstall", "--all", "-g"]), {
+    command: "uninstall",
+    values: [],
+    all: true,
+    global: true
+  });
   assert.throws(() => parseArgs(["promote"]), /Unknown command/);
   assert.throws(() => parseArgs(["add", "x", "--yes"]), /Unknown option/);
   assert.throws(() => parseArgs(["list", "-g"]), /Unknown option: -g/);
   assert.throws(() => parseArgs(["list", "extra"]), /does not accept arguments/);
+  assert.throws(() => parseArgs(["install", "--yes"]), /Unknown option/);
+  assert.throws(() => parseArgs(["install", "demo"]), /does not accept arguments/);
+  assert.throws(() => parseArgs(["uninstall", "--yes"]), /Unknown option/);
+  assert.throws(
+    () => parseArgs(["uninstall", "demo", "--all"]),
+    /does not accept names with --all/
+  );
 });
 
 test("registry list sorts entries and aligns labeled fields", () => {
@@ -100,6 +138,44 @@ test("CLI entrypoint detection follows install symlinks", () => {
     writeFileSync(target, "#!/usr/bin/env node\n");
     symlinkSync(target, link);
     assert.equal(isCliEntrypoint(pathToFileURL(target).href, link), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("uninstall CLI reports empty targets before requiring interactive input", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-uninstall-empty-"));
+  try {
+    assert.throws(
+      () => execFileSync(process.execPath, [join(process.cwd(), "dist/src/cli.js"), "uninstall"], {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"]
+      }),
+      /No installed skills found/
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("uninstall CLI rejects interactive selection without a TTY", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-uninstall-tty-"));
+  try {
+    const skill = join(root, ".agents", "skills", "demo");
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(
+      join(skill, "SKILL.md"),
+      "---\nname: demo\ndescription: Demo skill.\n---\n"
+    );
+    assert.throws(
+      () => execFileSync(process.execPath, [join(process.cwd(), "dist/src/cli.js"), "uninstall"], {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"]
+      }),
+      /Interactive skill selection requires a TTY/
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

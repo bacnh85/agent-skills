@@ -46,10 +46,11 @@ export function skillOptions(skills: DiscoveredSkill[]) {
 }
 
 export async function selectDiscoveredSkills(
-  skills: DiscoveredSkill[]
+  skills: DiscoveredSkill[],
+  action: "add" | "install" = "add"
 ): Promise<DiscoveredSkill[]> {
   const selected = await multiselect({
-    message: "Select skills to add",
+    message: `Select skills to ${action}`,
     options: skillOptions(skills),
     required: true
   });
@@ -67,6 +68,21 @@ export async function selectRegistrySkills(
       value: entry.name,
       label: entry.name,
       hint: entry.path
+    })),
+    required: true
+  });
+  return isCancel(selected) ? [] : selected;
+}
+
+export async function selectInstalledSkills(
+  skills: DiscoveredSkill[]
+): Promise<string[]> {
+  const selected = await multiselect({
+    message: "Select skills to uninstall",
+    options: skills.map((skill) => ({
+      value: skill.name,
+      label: skill.name,
+      hint: skill.absolutePath
     })),
     required: true
   });

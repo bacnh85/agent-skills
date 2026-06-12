@@ -1,9 +1,15 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pc from "picocolors";
-import { resolveTargetRepo } from "./config.js";
+import { resolveInstallTarget, resolveTargetRepo } from "./config.js";
 import { discoverSkills, resolveSource } from "./discovery.js";
+import {
+  discoverInstalledSkills,
+  installSkills,
+  uninstallSkills
+} from "./installer.js";
 import { addSkills, removeSkills, updateSkills } from "./manager.js";
 import { readRegistry } from "./registry.js";
 import type { RegistryEntry } from "./types.js";
@@ -11,12 +17,15 @@ import {
   formatOperationResult,
   runOperation,
   selectDiscoveredSkills,
+  selectInstalledSkills,
   selectRegistrySkills
 } from "./ui.js";
 
 export interface Args {
-  command?: "add" | "remove" | "list" | "update";
+  command?: "add" | "remove" | "list" | "update" | "install" | "uninstall";
   values: string[];
+  all?: boolean;
+  global?: boolean;
 }
 
 export function usage(): string {
@@ -24,17 +33,49 @@ export function usage(): string {
   agent-skills add <source>
   agent-skills remove [skills...]
   agent-skills list
-  agent-skills update [skills...]`;
+  agent-skills update [skills...]
+  agent-skills install [-g] [--all]
+  agent-skills uninstall [skills...] [-g]
+  agent-skills uninstall --all [-g]`;
 }
 
 export function parseArgs(argv: string[]): Args {
   if (!argv.length) return { values: [] };
   if (argv[0] === "--help" || argv[0] === "-h") return { values: [] };
   const command = argv[0];
-  if (!["add", "remove", "list", "update"].includes(command)) {
+  if (!["add", "remove", "list", "update", "install", "uninstall"].includes(command)) {
     throw new Error(`Unknown command: ${command}`);
   }
   const values = argv.slice(1);
+  if (command === "install") {
+    const allowed = new Set(["-g", "--all"]);
+    const option = values.find((value) => value.startsWith("-") && !allowed.has(value));
+    if (option) throw new Error(`Unknown option: ${option}`);
+    const positional = values.find((value) => !value.startsWith("-"));
+    if (positional) throw new Error("agent-skills install does not accept arguments.");
+    return {
+      command: "install",
+      values: [],
+      all: values.includes("--all"),
+      global: values.includes("-g")
+    };
+  }
+  if (command === "uninstall") {
+    const allowed = new Set(["-g", "--all"]);
+    const option = values.find((value) => value.startsWith("-") && !allowed.has(value));
+    if (option) throw new Error(`Unknown option: ${option}`);
+    const names = values.filter((value) => !value.startsWith("-"));
+    const all = values.includes("--all");
+    if (all && names.length) {
+      throw new Error("agent-skills uninstall does not accept names with --all.");
+    }
+    return {
+      command: "uninstall",
+      values: names,
+      all,
+      global: values.includes("-g")
+    };
+  }
   const option = values.find((value) => value.startsWith("-"));
   if (option) throw new Error(`Unknown option: ${option}`);
   if (command === "add" && values.length !== 1) {
@@ -102,8 +143,64 @@ async function main(): Promise<void> {
     console.log(usage());
     return;
   }
-  const repo = resolveTargetRepo();
   const interactive = Boolean(process.stdout.isTTY);
+  if (args.command === "install") {
+    const repo = resolveTargetRepo();
+    const source = resolveSource(join(repo, "skills"));
+    try {
+      const discovered = discoverSkills(source);
+      if (!discovered.length) throw new Error("No skills found in repository.");
+      let selected = discovered;
+      if (!args.all) {
+        if (!process.stdin.isTTY) {
+          throw new Error(
+            "Interactive skill selection requires a TTY. Use --all for unattended installation."
+          );
+        }
+        selected = await selectDiscoveredSkills(discovered, "install");
+        if (!selected.length) return;
+      }
+      const target = resolveInstallTarget({ global: args.global });
+      const count = selected.length;
+      printResults(
+        runOperation(
+          `Installing ${count} skill${count === 1 ? "" : "s"}...`,
+          `Installed ${count} skill${count === 1 ? "" : "s"}`,
+          interactive,
+          () => installSkills(target, selected)
+        )
+      );
+    } finally {
+      source.cleanup();
+    }
+    return;
+  }
+  if (args.command === "uninstall") {
+    const target = resolveInstallTarget({ global: args.global });
+    const installed = discoverInstalledSkills(target);
+    if (!installed.length) throw new Error(`No installed skills found in ${target}.`);
+    let names = args.all ? installed.map((skill) => skill.name) : args.values;
+    if (!args.all && !names.length) {
+      if (!process.stdin.isTTY) {
+        throw new Error(
+          "Interactive skill selection requires a TTY. Specify skills or use --all."
+        );
+      }
+      names = await selectInstalledSkills(installed);
+      if (!names.length) return;
+    }
+    const count = names.length;
+    printResults(
+      runOperation(
+        `Uninstalling ${count} skill${count === 1 ? "" : "s"}...`,
+        `Uninstalled ${count} skill${count === 1 ? "" : "s"}`,
+        interactive,
+        () => uninstallSkills(target, names)
+      )
+    );
+    return;
+  }
+  const repo = resolveTargetRepo();
   if (args.command === "list") {
     console.log(formatRegistryList(Object.values(readRegistry(repo).skills)));
     return;

@@ -1,25 +1,114 @@
 # Agent Skills
 
-Repository-based management for curated AI agent skills.
+`agent-skills` manages a curated repository of AI agent skills and installs
+those skills into project or user directories.
 
-## Install
+## Requirements
+
+- Node.js 20 or later
+- Git for adding or updating skills from remote repositories
+
+## Install the CLI
 
 ```bash
 npm install -g git+ssh://git@github.com/bacnh85/agent-skills.git
 ```
 
-Node.js 20 or later is required.
-
-By default, commands manage the current working directory. Set
-`AGENT_SKILLS_REPO` to manage another checkout:
+Set `AGENT_SKILLS_REPO` to the local checkout that contains the curated
+`skills/` directory and its registry:
 
 ```bash
 export AGENT_SKILLS_REPO=/absolute/path/to/agent-skills
 ```
 
-## Commands
+When the variable is not set, `agent-skills` uses the current working
+directory as the repository.
 
-Add skills from GitHub shorthand, a GitHub tree URL, any git URL, or a local
+## Install Skills for Agents
+
+Run this command from a project directory to select skills interactively:
+
+```bash
+agent-skills install
+```
+
+Selected skills are installed in:
+
+```text
+<current-directory>/.agents/skills/
+```
+
+Install every skill without a prompt:
+
+```bash
+agent-skills install --all
+```
+
+Install selected skills for the current user:
+
+```bash
+agent-skills install -g
+```
+
+Install every skill for the current user:
+
+```bash
+agent-skills install -g --all
+```
+
+Global skills are installed in:
+
+```text
+~/.agents/skills/
+```
+
+Installing a selected skill replaces its existing directory with the
+repository version. Skills in the destination that were not selected are left
+untouched.
+
+Interactive selection requires a terminal. Use `--all` in scripts, CI, and
+other non-interactive environments.
+
+## Uninstall Skills for Agents
+
+Remove named skills from the current project:
+
+```bash
+agent-skills uninstall demo notes
+```
+
+Run without names to select installed project skills interactively:
+
+```bash
+agent-skills uninstall
+```
+
+Remove every installed project skill:
+
+```bash
+agent-skills uninstall --all
+```
+
+Use `-g` with named, interactive, or `--all` forms to remove skills from
+`~/.agents/skills/`:
+
+```bash
+agent-skills uninstall demo -g
+agent-skills uninstall -g
+agent-skills uninstall --all -g
+```
+
+Only valid immediate skill directories are candidates. Uninstall leaves the
+`.agents/skills` directory and all unselected or unrelated entries intact.
+
+## Manage the Curated Repository
+
+The following commands read and update the repository selected by
+`AGENT_SKILLS_REPO`, or the current directory when it is unset.
+
+### Add
+
+Add skills from GitHub shorthand, a GitHub tree URL, any Git URL, or a local
 path:
 
 ```bash
@@ -30,38 +119,70 @@ agent-skills add ./my-local-skills
 ```
 
 A direct skill source or a source containing one skill is selected
-automatically. Sources containing multiple skills open a terminal multiselect.
-Non-interactive callers must use a direct skill URL or path.
+automatically. Sources containing multiple skills open an interactive
+multiselect. Non-interactive callers must use a direct skill URL or path.
 
-List registered skills:
+### List
+
+List skills registered in the curated repository:
 
 ```bash
 agent-skills list
 ```
 
-Remove named skills or select them interactively:
+### Remove
+
+Remove named skills:
 
 ```bash
-agent-skills remove demo
+agent-skills remove demo another-skill
+```
+
+Run without names to select skills interactively:
+
+```bash
 agent-skills remove
 ```
 
-Update selected skills, or all registered skills when no names are supplied:
+### Update
+
+Update named skills from their recorded sources:
 
 ```bash
-agent-skills update demo
+agent-skills update demo another-skill
+```
+
+Run without names to update every registered skill:
+
+```bash
 agent-skills update
 ```
 
 Git skills track the branch or ref recorded when added. Local skills are
-recopied from their original absolute path.
+copied again from their original absolute path.
 
-## Metadata
+## Command Reference
 
-`skill-registry.json` records each skill's repository-relative destination,
-source, source-relative path, tracked ref and commit, content hash, and
-timestamps. `skill-history.jsonl` contains append-only `add`, `update`, and
-`remove` events.
+```text
+agent-skills add <source>
+agent-skills remove [skills...]
+agent-skills list
+agent-skills update [skills...]
+agent-skills install [-g] [--all]
+agent-skills uninstall [skills...] [-g]
+agent-skills uninstall --all [-g]
+```
+
+## Repository Metadata
+
+`skill-registry.json` records each curated skill's repository-relative
+destination, source, source-relative path, tracked ref and commit, content
+hash, and timestamps. `skill-history.jsonl` contains append-only `add`,
+`update`, and `remove` events.
+
+These metadata files belong to the curated repository. The `install` command
+copies only skill directories and does not create registry or history files in
+`.agents/skills`.
 
 Version 1 registries are migrated in memory and written as version 2 on the
 next mutation. Legacy entries without enough source provenance remain listable
