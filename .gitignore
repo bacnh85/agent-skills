@@ -4,3 +4,4 @@ dist/
 .serena/
 .agents/
 *.tmp
+.env.local

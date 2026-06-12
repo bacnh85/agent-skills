@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { fileURLToPath } from "node:url";
 import { resolveCentralRepo } from "./config.js";
 import { defaultScope, listInstalled, resolveProvenance } from "./discovery.js";
 import { promoteSkill } from "./promote.js";
@@ -25,6 +27,14 @@ interface Args {
   allowSourceChange: boolean;
 }
 
+export interface SelectionState {
+  cursor: number;
+  filter: string;
+  selected: Set<string>;
+  accepted: boolean;
+  cancelled: boolean;
+}
+
 function usage(): string {
   return `Usage:
   agent-skills list [--scope project|global|all] [--json]
@@ -34,7 +44,11 @@ function usage(): string {
 Categories: ${CATEGORIES.join(", ")}`;
 }
 
-function parseArgs(argv: string[]): Args {
+export function parseArgs(argv: string[]): Args {
+  if (argv[0] === "--help" || argv[0] === "-h") {
+    console.log(usage());
+    process.exit(0);
+  }
   const result: Args = {
     command: argv.shift(),
     names: [],
@@ -77,6 +91,19 @@ function discover(scope: Scope | "all"): InstalledSkill[] {
     : listInstalled(scope);
 }
 
+export function shouldSelectInteractively(args: Args, isTTY: boolean): boolean {
+  return args.command === "promote" && !args.names.length && !args.yes && isTTY;
+}
+
+export function isCliEntrypoint(moduleUrl: string, argvPath?: string): boolean {
+  if (!argvPath) return false;
+  try {
+    return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(argvPath);
+  } catch {
+    return false;
+  }
+}
+
 async function confirm(message: string): Promise<boolean> {
   const terminal = createInterface({ input, output });
   try {
@@ -87,16 +114,133 @@ async function confirm(message: string): Promise<boolean> {
   }
 }
 
-async function selectInteractively(installed: InstalledSkill[]): Promise<InstalledSkill[]> {
-  console.log(installed.map((skill) => `${skill.name} (${skill.scope})`).join("\n"));
-  const terminal = createInterface({ input, output });
-  try {
-    const answer = await terminal.question("Skills to promote (comma-separated): ");
-    const names = answer.split(",").map((name) => name.trim()).filter(Boolean);
-    return installed.filter((skill) => names.includes(skill.name));
-  } finally {
-    terminal.close();
+function skillKey(skill: InstalledSkill): string {
+  return `${skill.scope}:${skill.name}`;
+}
+
+export function createSelectionState(): SelectionState {
+  return {
+    cursor: 0,
+    filter: "",
+    selected: new Set<string>(),
+    accepted: false,
+    cancelled: false
+  };
+}
+
+export function visibleSkills(
+  installed: InstalledSkill[],
+  state: SelectionState
+): InstalledSkill[] {
+  const query = state.filter.trim().toLowerCase();
+  if (!query) return installed;
+  return installed.filter(
+    (skill) =>
+      skill.name.toLowerCase().includes(query) ||
+      skill.scope.toLowerCase().includes(query)
+  );
+}
+
+export function selectedSkills(
+  installed: InstalledSkill[],
+  state: SelectionState
+): InstalledSkill[] {
+  return installed.filter((skill) => state.selected.has(skillKey(skill)));
+}
+
+function clampCursor(state: SelectionState, installed: InstalledSkill[]): SelectionState {
+  const visible = visibleSkills(installed, state);
+  return {
+    ...state,
+    cursor: Math.max(0, Math.min(state.cursor, Math.max(visible.length - 1, 0)))
+  };
+}
+
+export function applySelectionInput(
+  installed: InstalledSkill[],
+  state: SelectionState,
+  inputValue: string
+): SelectionState {
+  if (state.accepted || state.cancelled) return state;
+  if (inputValue === "\u0003" || inputValue === "\u001b") {
+    return { ...state, cancelled: true };
   }
+  if (inputValue === "\r" || inputValue === "\n") {
+    return { ...state, accepted: true };
+  }
+  if (inputValue === "\u001b[A") {
+    const visible = visibleSkills(installed, state);
+    if (!visible.length) return state;
+    return { ...state, cursor: (state.cursor + visible.length - 1) % visible.length };
+  }
+  if (inputValue === "\u001b[B") {
+    const visible = visibleSkills(installed, state);
+    if (!visible.length) return state;
+    return { ...state, cursor: (state.cursor + 1) % visible.length };
+  }
+  if (inputValue === " ") {
+    const visible = visibleSkills(installed, state);
+    const skill = visible[state.cursor];
+    if (!skill) return state;
+    const selected = new Set(state.selected);
+    const key = skillKey(skill);
+    if (selected.has(key)) selected.delete(key);
+    else selected.add(key);
+    return { ...state, selected };
+  }
+  if (inputValue === "\u007f" || inputValue === "\b") {
+    return clampCursor({ ...state, filter: state.filter.slice(0, -1), cursor: 0 }, installed);
+  }
+  if (/^[\x20-\x7E]$/.test(inputValue)) {
+    return clampCursor({ ...state, filter: state.filter + inputValue, cursor: 0 }, installed);
+  }
+  return state;
+}
+
+function renderSelector(installed: InstalledSkill[], state: SelectionState): string {
+  const visible = visibleSkills(installed, state);
+  const lines = [
+    "Select skills to promote",
+    `Filter: ${state.filter}`,
+    "Use Up/Down to move, Space to toggle, Enter to accept, Esc to cancel.",
+    ""
+  ];
+  if (!visible.length) {
+    lines.push("  No matching skills");
+  } else {
+    for (const [index, skill] of visible.entries()) {
+      const cursor = index === state.cursor ? ">" : " ";
+      const checked = state.selected.has(skillKey(skill)) ? "x" : " ";
+      lines.push(`${cursor} [${checked}] ${skill.name} (${skill.scope})`);
+    }
+  }
+  lines.push("", `${state.selected.size} selected`);
+  return lines.join("\n");
+}
+
+async function selectInteractively(installed: InstalledSkill[]): Promise<InstalledSkill[]> {
+  if (!input.isTTY || !output.isTTY) return [];
+  let state = createSelectionState();
+  const wasRaw = input.isRaw;
+  input.setRawMode(true);
+  input.resume();
+  output.write("\x1b[?25l");
+  const redraw = () => output.write(`\x1b[2J\x1b[H${renderSelector(installed, state)}`);
+  redraw();
+  return await new Promise((resolve) => {
+    const finish = () => {
+      input.off("data", onData);
+      input.setRawMode(wasRaw);
+      output.write("\x1b[?25h\x1b[2J\x1b[H");
+      resolve(state.cancelled ? [] : selectedSkills(installed, state));
+    };
+    const onData = (data: Buffer) => {
+      state = applySelectionInput(installed, state, data.toString("utf8"));
+      if (state.accepted || state.cancelled) finish();
+      else redraw();
+    };
+    input.on("data", onData);
+  });
 }
 
 async function main(): Promise<void> {
@@ -128,10 +272,14 @@ async function main(): Promise<void> {
   if (args.command !== "promote") throw new Error(`Unknown command: ${args.command}`);
 
   let selected = installed.filter((skill) => args.names.includes(skill.name));
-  if (!args.names.length && !args.yes && process.stdin.isTTY) {
+  const usedInteractiveSelection = shouldSelectInteractively(args, Boolean(process.stdin.isTTY));
+  if (usedInteractiveSelection) {
     selected = await selectInteractively(installed);
   }
-  if (!selected.length) throw new Error("No matching skills selected.");
+  if (!selected.length) {
+    if (usedInteractiveSelection) return;
+    throw new Error("No matching skills selected.");
+  }
   const duplicateNames = selected
     .filter((skill, index, values) =>
       values.findIndex((candidate) => candidate.name === skill.name) !== index
@@ -186,7 +334,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+if (isCliEntrypoint(import.meta.url, process.argv[1])) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

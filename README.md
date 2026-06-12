@@ -10,6 +10,25 @@ npm install -g git+ssh://git@github.com/bacnh85/agent-skills.git
 
 Node.js 20 or later is required.
 
+For a local checkout, install and verify the linked binary with:
+
+```bash
+npm install -g .
+agent-skills --help
+```
+
+To run through npm without a global install after publishing this package, use
+the package name:
+
+```bash
+npx @bacnh85/agent-skills list --scope all
+```
+
+Exact `npx agent-skills ...` support requires publishing an npm package named
+`agent-skills` with the same `bin.agent-skills` entry. If this package remains
+scoped as `@bacnh85/agent-skills`, the equivalent short-lived npm execution is
+`npx @bacnh85/agent-skills ...`.
+
 Configure the central checkout in a project `.env` or the shared agent
 configuration at `~/.agents/.env`:
 

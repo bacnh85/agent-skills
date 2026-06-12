@@ -106,3 +106,7 @@ cp -r skills/{skill-name} ~/.claude/skills/
 Add the skill to project knowledge or paste SKILL.md contents into the conversation.
 
 If the skill requires network access, instruct users to add required domains at `claude.ai/settings/capabilities`.
+
+## Lessons
+
+- CLI modules that expose test helpers should guard runtime execution with an import-safe entrypoint check, so tests can import parser and state helpers without invoking the command.

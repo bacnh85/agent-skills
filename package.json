@@ -1,11 +1,13 @@
 {
   "name": "@bacnh85/agent-skills",
   "version": "0.1.0",
-  "private": true,
   "description": "Promote installed agent skills into a categorized central repository.",
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
-    "agent-skills": "dist/src/cli.js"
+    "agent-skills": "./dist/src/cli.js"
   },
   "files": ["dist", "skills"],
   "scripts": {
