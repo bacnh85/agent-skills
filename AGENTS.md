@@ -110,3 +110,4 @@ If the skill requires network access, instruct users to add required domains at 
 ## Lessons
 
 - CLI modules that expose test helpers should guard runtime execution with an import-safe entrypoint check, so tests can import parser and state helpers without invoking the command.
+- Do not run `npx skills add` directly to probe its terminal UX; agent detection can make it install non-interactively. Inspect upstream source or use an isolated, explicitly controlled harness instead.

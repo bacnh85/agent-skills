@@ -54,8 +54,18 @@ agent-skills promote obsidian --scope project --category productivity --dry-run
 agent-skills promote obsidian --scope project --category productivity --yes
 ```
 
+Running `agent-skills promote` in a terminal without skill names opens the
+branded interactive flow. It discovers project and global installations,
+auto-selects a sole match or presents a multiselect, then shows destination,
+category, and source provenance for review before writing. Press `Esc` or
+`Ctrl+C` at a prompt to cancel without changes.
+
 `promote` searches project and global installations by default. Use `--scope`
 when the same skill name exists in both locations.
+
+Automation remains available through positional skill names and `--yes`.
+`--yes` skips confirmation but does not select every installed skill when no
+names are supplied. Use `--json` for undecorated machine-readable results.
 
 For global skills without lock-file provenance, supply the original source:
 

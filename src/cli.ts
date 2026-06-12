@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
-import { createInterface } from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
 import { fileURLToPath } from "node:url";
 import { resolveCentralRepo } from "./config.js";
 import { defaultScope, listInstalled, resolveProvenance } from "./discovery.js";
 import { promoteSkill } from "./promote.js";
+import {
+  confirmPromotion,
+  promoteWithProgress,
+  selectSkills,
+  showAutoSelection,
+  showCancellation,
+  showPromoteIntro,
+  showPromotionResults,
+  startDiscoverySpinner
+} from "./promote-ui.js";
 import { inferCategory, validateSkill } from "./skill.js";
 import {
   CATEGORIES,
@@ -25,14 +33,6 @@ interface Args {
   category?: Category;
   source?: string;
   allowSourceChange: boolean;
-}
-
-export interface SelectionState {
-  cursor: number;
-  filter: string;
-  selected: Set<string>;
-  accepted: boolean;
-  cancelled: boolean;
 }
 
 function usage(): string {
@@ -95,6 +95,22 @@ export function shouldSelectInteractively(args: Args, isTTY: boolean): boolean {
   return args.command === "promote" && !args.names.length && !args.yes && isTTY;
 }
 
+export function shouldUsePromoteUI(args: Args, isTTY: boolean): boolean {
+  return args.command === "promote" && !args.json && isTTY;
+}
+
+export function duplicateSkillNames(skills: InstalledSkill[]): string[] {
+  return [
+    ...new Set(
+      skills
+        .filter((skill, index, values) =>
+          values.findIndex((candidate) => candidate.name === skill.name) !== index
+        )
+        .map((skill) => skill.name)
+    )
+  ];
+}
+
 export function isCliEntrypoint(moduleUrl: string, argvPath?: string): boolean {
   if (!argvPath) return false;
   try {
@@ -104,152 +120,19 @@ export function isCliEntrypoint(moduleUrl: string, argvPath?: string): boolean {
   }
 }
 
-async function confirm(message: string): Promise<boolean> {
-  const terminal = createInterface({ input, output });
-  try {
-    const answer = await terminal.question(`${message} [y/N] `);
-    return /^y(es)?$/i.test(answer.trim());
-  } finally {
-    terminal.close();
-  }
-}
-
-function skillKey(skill: InstalledSkill): string {
-  return `${skill.scope}:${skill.name}`;
-}
-
-export function createSelectionState(): SelectionState {
-  return {
-    cursor: 0,
-    filter: "",
-    selected: new Set<string>(),
-    accepted: false,
-    cancelled: false
-  };
-}
-
-export function visibleSkills(
-  installed: InstalledSkill[],
-  state: SelectionState
-): InstalledSkill[] {
-  const query = state.filter.trim().toLowerCase();
-  if (!query) return installed;
-  return installed.filter(
-    (skill) =>
-      skill.name.toLowerCase().includes(query) ||
-      skill.scope.toLowerCase().includes(query)
-  );
-}
-
-export function selectedSkills(
-  installed: InstalledSkill[],
-  state: SelectionState
-): InstalledSkill[] {
-  return installed.filter((skill) => state.selected.has(skillKey(skill)));
-}
-
-function clampCursor(state: SelectionState, installed: InstalledSkill[]): SelectionState {
-  const visible = visibleSkills(installed, state);
-  return {
-    ...state,
-    cursor: Math.max(0, Math.min(state.cursor, Math.max(visible.length - 1, 0)))
-  };
-}
-
-export function applySelectionInput(
-  installed: InstalledSkill[],
-  state: SelectionState,
-  inputValue: string
-): SelectionState {
-  if (state.accepted || state.cancelled) return state;
-  if (inputValue === "\u0003" || inputValue === "\u001b") {
-    return { ...state, cancelled: true };
-  }
-  if (inputValue === "\r" || inputValue === "\n") {
-    return { ...state, accepted: true };
-  }
-  if (inputValue === "\u001b[A") {
-    const visible = visibleSkills(installed, state);
-    if (!visible.length) return state;
-    return { ...state, cursor: (state.cursor + visible.length - 1) % visible.length };
-  }
-  if (inputValue === "\u001b[B") {
-    const visible = visibleSkills(installed, state);
-    if (!visible.length) return state;
-    return { ...state, cursor: (state.cursor + 1) % visible.length };
-  }
-  if (inputValue === " ") {
-    const visible = visibleSkills(installed, state);
-    const skill = visible[state.cursor];
-    if (!skill) return state;
-    const selected = new Set(state.selected);
-    const key = skillKey(skill);
-    if (selected.has(key)) selected.delete(key);
-    else selected.add(key);
-    return { ...state, selected };
-  }
-  if (inputValue === "\u007f" || inputValue === "\b") {
-    return clampCursor({ ...state, filter: state.filter.slice(0, -1), cursor: 0 }, installed);
-  }
-  if (/^[\x20-\x7E]$/.test(inputValue)) {
-    return clampCursor({ ...state, filter: state.filter + inputValue, cursor: 0 }, installed);
-  }
-  return state;
-}
-
-function renderSelector(installed: InstalledSkill[], state: SelectionState): string {
-  const visible = visibleSkills(installed, state);
-  const lines = [
-    "Select skills to promote",
-    `Filter: ${state.filter}`,
-    "Use Up/Down to move, Space to toggle, Enter to accept, Esc to cancel.",
-    ""
-  ];
-  if (!visible.length) {
-    lines.push("  No matching skills");
-  } else {
-    for (const [index, skill] of visible.entries()) {
-      const cursor = index === state.cursor ? ">" : " ";
-      const checked = state.selected.has(skillKey(skill)) ? "x" : " ";
-      lines.push(`${cursor} [${checked}] ${skill.name} (${skill.scope})`);
-    }
-  }
-  lines.push("", `${state.selected.size} selected`);
-  return lines.join("\n");
-}
-
-async function selectInteractively(installed: InstalledSkill[]): Promise<InstalledSkill[]> {
-  if (!input.isTTY || !output.isTTY) return [];
-  let state = createSelectionState();
-  const wasRaw = input.isRaw;
-  input.setRawMode(true);
-  input.resume();
-  output.write("\x1b[?25l");
-  const redraw = () => output.write(`\x1b[2J\x1b[H${renderSelector(installed, state)}`);
-  redraw();
-  return await new Promise((resolve) => {
-    const finish = () => {
-      input.off("data", onData);
-      input.setRawMode(wasRaw);
-      output.write("\x1b[?25h\x1b[2J\x1b[H");
-      resolve(state.cancelled ? [] : selectedSkills(installed, state));
-    };
-    const onData = (data: Buffer) => {
-      state = applySelectionInput(installed, state, data.toString("utf8"));
-      if (state.accepted || state.cancelled) finish();
-      else redraw();
-    };
-    input.on("data", onData);
-  });
-}
-
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (!args.command) {
     console.log(usage());
     return;
   }
+  const humanPromote = shouldUsePromoteUI(args, Boolean(process.stdout.isTTY));
+  if (humanPromote) showPromoteIntro();
+  const discoveryProgress = humanPromote ? startDiscoverySpinner() : undefined;
   const installed = discover(args.scope ?? defaultScope(args.command));
+  discoveryProgress?.stop(
+    `Found ${installed.length} installed skill${installed.length === 1 ? "" : "s"}`
+  );
   if (args.command === "list") {
     const candidates = installed.map((skill) => {
       const suggestion = inferCategory(validateSkill(skill.path, skill.name));
@@ -274,20 +157,25 @@ async function main(): Promise<void> {
   let selected = installed.filter((skill) => args.names.includes(skill.name));
   const usedInteractiveSelection = shouldSelectInteractively(args, Boolean(process.stdin.isTTY));
   if (usedInteractiveSelection) {
-    selected = await selectInteractively(installed);
+    if (installed.length === 1) showAutoSelection(installed[0]);
+    const selection = await selectSkills(installed);
+    if (selection.cancelled) {
+      showCancellation();
+      return;
+    }
+    selected = selection.skills;
   }
   if (!selected.length) {
-    if (usedInteractiveSelection) return;
+    if (usedInteractiveSelection) {
+      showCancellation();
+      return;
+    }
     throw new Error("No matching skills selected.");
   }
-  const duplicateNames = selected
-    .filter((skill, index, values) =>
-      values.findIndex((candidate) => candidate.name === skill.name) !== index
-    )
-    .map((skill) => skill.name);
+  const duplicateNames = duplicateSkillNames(selected);
   if (duplicateNames.length) {
     throw new Error(
-      `Skills installed in both project and global scope are ambiguous: ${[...new Set(duplicateNames)].join(", ")}. Pass --scope project or --scope global.`
+      `Skills installed in both project and global scope are ambiguous: ${duplicateNames.join(", ")}. Pass --scope project or --scope global.`
     );
   }
 
@@ -308,23 +196,25 @@ async function main(): Promise<void> {
   });
 
   if (!args.yes && !args.dryRun) {
-    for (const item of prepared) {
-      console.log(
-        `${item.skill.name} -> skills/${item.category}/${item.skill.name} from ${item.provenance.source}`
-      );
+    if (!(await confirmPromotion(prepared, repo))) {
+      showCancellation();
+      return;
     }
-    if (!(await confirm("Promote these skills?"))) return;
   }
 
-  const results = prepared.map((item) =>
+  const runPromotion = (item: (typeof prepared)[number]) =>
     promoteSkill({
       ...item,
       repo,
       dryRun: args.dryRun,
       allowSourceChange: args.allowSourceChange
-    })
-  );
+    });
+  const results =
+    humanPromote && !args.json
+      ? promoteWithProgress(prepared, runPromotion)
+      : prepared.map(runPromotion);
   if (args.json) console.log(JSON.stringify(results, null, 2));
+  else if (humanPromote) showPromotionResults(results);
   else {
     for (const result of results) {
       console.log(
