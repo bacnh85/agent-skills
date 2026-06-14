@@ -10,27 +10,36 @@ those skills into project or user directories.
 
 ## Install the CLI
 
-Install from the public GitHub repository tarball:
+Install the CLI globally from GitHub:
 
 ```bash
-npm install -g https://codeload.github.com/bacnh85/agent-skills/tar.gz/refs/heads/main
-```
-
-You can pin a branch, tag, or commit by changing the final path segment. For
-example, to install the `main` branch the URL ends with `/refs/heads/main`.
-
-SSH/Git installs can be useful for development machines with GitHub SSH keys,
-but the tarball form above is recommended for end users because it behaves
-consistently across npm versions on macOS, Linux, and Windows:
-
-```bash
-npm install -g git+ssh://git@github.com/bacnh85/agent-skills.git
+npm install -g bacnh85/agent-skills
 ```
 
 Verify the installed CLI:
 
 ```bash
 agent-skills --help
+```
+
+You can also install it into a project and run it with `npx`:
+
+```bash
+npm install bacnh85/agent-skills
+npx agent-skills --help
+```
+
+Pin a branch, tag, or commit by adding a `#ref` suffix:
+
+```bash
+npm install -g bacnh85/agent-skills#main
+npm install bacnh85/agent-skills#main
+```
+
+SSH/Git installs also work on development machines with GitHub SSH keys:
+
+```bash
+npm install -g git+ssh://git@github.com/bacnh85/agent-skills.git
 ```
 
 Set `AGENT_SKILLS_REPO` to the local checkout that contains the curated

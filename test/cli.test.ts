@@ -185,6 +185,8 @@ test("package has a git-install-safe prepare script and committed CLI entrypoint
   const manifest = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
 
   assert.equal(manifest.scripts.prepare, "node scripts/prepare-package.cjs");
+  assert.match(manifest.scripts.install, /npm_package_resolved/);
+  assert.match(manifest.scripts.install, /dist\/src\/cli\.js/);
   assert.equal(manifest.scripts.prepack, "npm run build");
   assert.equal(manifest.bin["agent-skills"], "./dist/src/cli.js");
 });
