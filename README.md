@@ -10,8 +10,27 @@ those skills into project or user directories.
 
 ## Install the CLI
 
+Install from the public GitHub repository tarball:
+
+```bash
+npm install -g https://codeload.github.com/bacnh85/agent-skills/tar.gz/refs/heads/main
+```
+
+You can pin a branch, tag, or commit by changing the final path segment. For
+example, to install the `main` branch the URL ends with `/refs/heads/main`.
+
+SSH/Git installs can be useful for development machines with GitHub SSH keys,
+but the tarball form above is recommended for end users because it behaves
+consistently across npm versions on macOS, Linux, and Windows:
+
 ```bash
 npm install -g git+ssh://git@github.com/bacnh85/agent-skills.git
+```
+
+Verify the installed CLI:
+
+```bash
+agent-skills --help
 ```
 
 Set `AGENT_SKILLS_REPO` to the local checkout that contains the curated
@@ -19,6 +38,18 @@ Set `AGENT_SKILLS_REPO` to the local checkout that contains the curated
 
 ```bash
 export AGENT_SKILLS_REPO=/absolute/path/to/agent-skills
+```
+
+PowerShell on Windows:
+
+```powershell
+$env:AGENT_SKILLS_REPO = "C:\path\to\agent-skills"
+```
+
+To persist it for future PowerShell sessions:
+
+```powershell
+[Environment]::SetEnvironmentVariable("AGENT_SKILLS_REPO", "C:\path\to\agent-skills", "User")
 ```
 
 When the variable is not set, `agent-skills` uses the current working

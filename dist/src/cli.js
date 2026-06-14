@@ -1,0 +1,224 @@
+#!/usr/bin/env node
+import { realpathSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import pc from "picocolors";
+import { resolveInstallTarget, resolveTargetRepo } from "./config.js";
+import { discoverSkills, resolveSource } from "./discovery.js";
+import { discoverInstalledSkills, installSkills, uninstallSkills } from "./installer.js";
+import { addSkills, removeSkills, updateSkills } from "./manager.js";
+import { readRegistry } from "./registry.js";
+import { formatOperationResult, runOperation, selectDiscoveredSkills, selectInstalledSkills, selectRegistrySkills } from "./ui.js";
+export function usage() {
+    return `Usage:
+  agent-skills add <source>
+  agent-skills remove [skills...]
+  agent-skills list
+  agent-skills update [skills...]
+  agent-skills install [-g] [--all]
+  agent-skills uninstall [skills...] [-g]
+  agent-skills uninstall --all [-g]`;
+}
+export function parseArgs(argv) {
+    if (!argv.length)
+        return { values: [] };
+    if (argv[0] === "--help" || argv[0] === "-h")
+        return { values: [] };
+    const command = argv[0];
+    if (!["add", "remove", "list", "update", "install", "uninstall"].includes(command)) {
+        throw new Error(`Unknown command: ${command}`);
+    }
+    const values = argv.slice(1);
+    if (command === "install") {
+        const allowed = new Set(["-g", "--all"]);
+        const option = values.find((value) => value.startsWith("-") && !allowed.has(value));
+        if (option)
+            throw new Error(`Unknown option: ${option}`);
+        const positional = values.find((value) => !value.startsWith("-"));
+        if (positional)
+            throw new Error("agent-skills install does not accept arguments.");
+        return {
+            command: "install",
+            values: [],
+            all: values.includes("--all"),
+            global: values.includes("-g")
+        };
+    }
+    if (command === "uninstall") {
+        const allowed = new Set(["-g", "--all"]);
+        const option = values.find((value) => value.startsWith("-") && !allowed.has(value));
+        if (option)
+            throw new Error(`Unknown option: ${option}`);
+        const names = values.filter((value) => !value.startsWith("-"));
+        const all = values.includes("--all");
+        if (all && names.length) {
+            throw new Error("agent-skills uninstall does not accept names with --all.");
+        }
+        return {
+            command: "uninstall",
+            values: names,
+            all,
+            global: values.includes("-g")
+        };
+    }
+    const option = values.find((value) => value.startsWith("-"));
+    if (option)
+        throw new Error(`Unknown option: ${option}`);
+    if (command === "add" && values.length !== 1) {
+        throw new Error("Usage: agent-skills add <source>");
+    }
+    if (command === "list" && values.length) {
+        throw new Error("agent-skills list does not accept arguments.");
+    }
+    return { command: command, values };
+}
+export function isCliEntrypoint(moduleUrl, argvPath) {
+    if (!argvPath)
+        return false;
+    try {
+        return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(argvPath);
+    }
+    catch {
+        return false;
+    }
+}
+export function formatRegistryList(entries) {
+    if (!entries.length)
+        return pc.dim("No project skills found.");
+    const rows = [...entries]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((entry) => ({
+        name: entry.name,
+        path: entry.path,
+        source: entry.source || "-",
+        ref: entry.ref || "-",
+        commit: entry.commit?.slice(0, 12) || "-",
+        updatedAt: entry.updatedAt || "-"
+    }));
+    const width = (values) => Math.max(...values.map((value) => value.length));
+    const widths = {
+        name: width(rows.map((row) => row.name)),
+        path: width(rows.map((row) => row.path)),
+        source: width(rows.map((row) => row.source)),
+        ref: width(rows.map((row) => row.ref)),
+        commit: width(rows.map((row) => row.commit))
+    };
+    const lines = rows.map((row) => [
+        pc.cyan(row.name.padEnd(widths.name)),
+        pc.dim(row.path.padEnd(widths.path)),
+        `${pc.dim("Source:")} ${row.source.padEnd(widths.source)}`,
+        `${pc.dim("Ref:")} ${row.ref.padEnd(widths.ref)}`,
+        `${pc.dim("Commit:")} ${row.commit.padEnd(widths.commit)}`,
+        `${pc.dim("Updated:")} ${row.updatedAt}`
+    ].join("  "));
+    return [pc.bold("Project Skills"), "", ...lines, ""].join("\n");
+}
+function printResults(results) {
+    for (const result of results) {
+        console.log(formatOperationResult(result));
+    }
+}
+async function main() {
+    const args = parseArgs(process.argv.slice(2));
+    if (!args.command) {
+        console.log(usage());
+        return;
+    }
+    const interactive = Boolean(process.stdout.isTTY);
+    if (args.command === "install") {
+        const repo = resolveTargetRepo();
+        const source = resolveSource(join(repo, "skills"));
+        try {
+            const discovered = discoverSkills(source);
+            if (!discovered.length)
+                throw new Error("No skills found in repository.");
+            let selected = discovered;
+            if (!args.all) {
+                if (!process.stdin.isTTY) {
+                    throw new Error("Interactive skill selection requires a TTY. Use --all for unattended installation.");
+                }
+                selected = await selectDiscoveredSkills(discovered, "install");
+                if (!selected.length)
+                    return;
+            }
+            const target = resolveInstallTarget({ global: args.global });
+            const count = selected.length;
+            printResults(runOperation(`Installing ${count} skill${count === 1 ? "" : "s"}...`, `Installed ${count} skill${count === 1 ? "" : "s"}`, interactive, () => installSkills(target, selected)));
+        }
+        finally {
+            source.cleanup();
+        }
+        return;
+    }
+    if (args.command === "uninstall") {
+        const target = resolveInstallTarget({ global: args.global });
+        const installed = discoverInstalledSkills(target);
+        if (!installed.length)
+            throw new Error(`No installed skills found in ${target}.`);
+        let names = args.all ? installed.map((skill) => skill.name) : args.values;
+        if (!args.all && !names.length) {
+            if (!process.stdin.isTTY) {
+                throw new Error("Interactive skill selection requires a TTY. Specify skills or use --all.");
+            }
+            names = await selectInstalledSkills(installed);
+            if (!names.length)
+                return;
+        }
+        const count = names.length;
+        printResults(runOperation(`Uninstalling ${count} skill${count === 1 ? "" : "s"}...`, `Uninstalled ${count} skill${count === 1 ? "" : "s"}`, interactive, () => uninstallSkills(target, names)));
+        return;
+    }
+    const repo = resolveTargetRepo();
+    if (args.command === "list") {
+        console.log(formatRegistryList(Object.values(readRegistry(repo).skills)));
+        return;
+    }
+    if (args.command === "remove") {
+        let names = args.values;
+        if (!names.length) {
+            if (!process.stdin.isTTY) {
+                throw new Error("No skills specified and interactive selection is unavailable.");
+            }
+            names = await selectRegistrySkills(Object.values(readRegistry(repo).skills));
+            if (!names.length)
+                return;
+        }
+        const count = names.length;
+        printResults(runOperation(`Removing ${count} skill${count === 1 ? "" : "s"}...`, `Removed ${count} skill${count === 1 ? "" : "s"}`, interactive, () => removeSkills(repo, names)));
+        return;
+    }
+    if (args.command === "update") {
+        const count = args.values.length || Object.keys(readRegistry(repo).skills).length;
+        printResults(runOperation(`Updating ${count} skill${count === 1 ? "" : "s"}...`, `Checked ${count} skill${count === 1 ? "" : "s"}`, interactive, (progress) => updateSkills(repo, args.values, (name, index, total) => {
+            progress.message(`Updating ${name} (${index}/${total})...`);
+        })));
+        return;
+    }
+    const source = resolveSource(args.values[0]);
+    try {
+        const discovered = discoverSkills(source);
+        if (!discovered.length)
+            throw new Error("No skills found in source.");
+        let selected = discovered;
+        if (discovered.length > 1) {
+            if (!process.stdin.isTTY) {
+                throw new Error(`Source contains ${discovered.length} skills; interactive selection requires a TTY. Use a direct skill URL or path.`);
+            }
+            selected = await selectDiscoveredSkills(discovered);
+            if (!selected.length)
+                return;
+        }
+        const count = selected.length;
+        printResults(runOperation(`Adding ${count} skill${count === 1 ? "" : "s"}...`, `Added ${count} skill${count === 1 ? "" : "s"}`, interactive, () => addSkills({ repo, source, selected })));
+    }
+    finally {
+        source.cleanup();
+    }
+}
+if (isCliEntrypoint(import.meta.url, process.argv[1])) {
+    main().catch((error) => {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+    });
+}
+//# sourceMappingURL=cli.js.map
