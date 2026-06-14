@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -179,4 +179,12 @@ test("uninstall CLI rejects interactive selection without a TTY", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("package has a git-install-safe prepare script and committed CLI entrypoint", () => {
+  const manifest = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
+
+  assert.equal(manifest.scripts.prepare, "node scripts/prepare-package.cjs");
+  assert.equal(manifest.scripts.prepack, "npm run build");
+  assert.equal(manifest.bin["agent-skills"], "./dist/src/cli.js");
 });
