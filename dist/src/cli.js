@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { confirm, isCancel } from "@clack/prompts";
@@ -19,12 +19,13 @@ export function usage() {
   agent-skills version
   agent-skills update [--skill <name>]...
   agent-skills install [-g] [--all]
-  agent-skills uninstall [skills...] [-g]
+  agent-skills uninstall [--skill <name>]... [-g]
   agent-skills uninstall --all [-g]`;
 }
-function parseSkillOptions(values) {
+function parseSkillOptions(values, allowedOptions = new Set()) {
     const positionals = [];
     const skills = [];
+    const options = new Set();
     for (let index = 0; index < values.length; index += 1) {
         const value = values[index];
         if (value === "--skill") {
@@ -36,6 +37,9 @@ function parseSkillOptions(values) {
                 skills.push(name);
             index += 1;
         }
+        else if (allowedOptions.has(value)) {
+            options.add(value);
+        }
         else if (value.startsWith("-")) {
             throw new Error(`Unknown option: ${value}`);
         }
@@ -43,7 +47,7 @@ function parseSkillOptions(values) {
             positionals.push(value);
         }
     }
-    return { positionals, skills };
+    return { positionals, skills, options };
 }
 export function parseArgs(argv) {
     if (!argv.length)
@@ -93,20 +97,20 @@ export function parseArgs(argv) {
         };
     }
     if (command === "uninstall") {
-        const allowed = new Set(["-g", "--all"]);
-        const option = values.find((value) => value.startsWith("-") && !allowed.has(value));
-        if (option)
-            throw new Error(`Unknown option: ${option}`);
-        const names = values.filter((value) => !value.startsWith("-"));
-        const all = values.includes("--all");
-        if (all && names.length) {
-            throw new Error("agent-skills uninstall does not accept names with --all.");
+        const { positionals, skills, options } = parseSkillOptions(values, new Set(["-g", "--all"]));
+        if (positionals.length) {
+            throw new Error("Usage: agent-skills uninstall [--skill <name>]... [-g]");
+        }
+        const all = options.has("--all");
+        if (all && skills.length) {
+            throw new Error("agent-skills uninstall does not accept --skill with --all.");
         }
         return {
             command: "uninstall",
-            values: names,
+            values: [],
+            ...(skills.length ? { skills } : {}),
             all,
-            global: values.includes("-g")
+            global: options.has("-g")
         };
     }
     const option = values.find((value) => value.startsWith("-"));
@@ -169,6 +173,31 @@ export function formatRegistryList(entries) {
         `${pc.dim("Updated:")} ${row.updatedAt}`
     ].join("  "));
     return [pc.bold("Project Skills"), "", ...lines, ""].join("\n");
+}
+export function listProjectSkills(repo, registry) {
+    const skillsRoot = join(repo, "skills");
+    if (!existsSync(skillsRoot))
+        return [];
+    const source = resolveSource(skillsRoot);
+    try {
+        return discoverSkills(source).map((skill) => {
+            const path = `skills/${skill.relativePath}`;
+            const registered = Object.values(registry.skills).find((entry) => entry.path === path);
+            return registered ?? {
+                name: skill.name,
+                path,
+                source: "",
+                sourceType: "local",
+                hash: "",
+                addedAt: "",
+                updatedAt: "",
+                updatable: false
+            };
+        });
+    }
+    finally {
+        source.cleanup();
+    }
 }
 function printResults(results) {
     for (const result of results) {
@@ -233,7 +262,7 @@ async function runCommand(args) {
         const installed = discoverInstalledSkills(target);
         if (!installed.length)
             throw new Error(`No installed skills found in ${target}.`);
-        let names = args.all ? installed.map((skill) => skill.name) : args.values;
+        let names = args.all ? installed.map((skill) => skill.name) : args.skills ?? [];
         if (!args.all && !names.length) {
             if (!process.stdin.isTTY) {
                 throw new Error("Interactive skill selection requires a TTY. Specify skills or use --all.");
@@ -248,7 +277,8 @@ async function runCommand(args) {
     }
     const repo = resolveTargetRepo();
     if (args.command === "list") {
-        console.log(formatRegistryList(Object.values(readRegistry(repo).skills)));
+        const registry = readRegistry(repo);
+        console.log(formatRegistryList(listProjectSkills(repo, registry)));
         return;
     }
     if (args.command === "remove") {

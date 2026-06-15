@@ -126,7 +126,7 @@ other non-interactive environments.
 Remove named skills from the current project:
 
 ```bash
-agent-skills uninstall demo notes
+agent-skills uninstall --skill demo --skill notes
 ```
 
 Run without names to select installed project skills interactively:
@@ -145,7 +145,7 @@ Use `-g` with named, interactive, or `--all` forms to remove skills from
 `~/.agents/skills/`:
 
 ```bash
-agent-skills uninstall demo -g
+agent-skills uninstall --skill demo -g
 agent-skills uninstall -g
 agent-skills uninstall --all -g
 ```
@@ -225,7 +225,7 @@ agent-skills list
 agent-skills version
 agent-skills update [--skill <name>]...
 agent-skills install [-g] [--all]
-agent-skills uninstall [skills...] [-g]
+agent-skills uninstall [--skill <name>]... [-g]
 agent-skills uninstall --all [-g]
 ```
 

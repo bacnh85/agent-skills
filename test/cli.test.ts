@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import {
   formatRegistryList,
   isCliEntrypoint,
+  listProjectSkills,
   parseArgs,
   selectNamedSkills,
   shouldCheckForUpdates,
@@ -77,12 +78,23 @@ test("parser accepts repository management and install commands", () => {
     all: true,
     global: true
   });
-  assert.deepEqual(parseArgs(["uninstall", "demo", "notes", "-g"]), {
+  assert.deepEqual(parseArgs(["uninstall", "--skill", "demo", "-g", "--skill", "notes"]), {
     command: "uninstall",
-    values: ["demo", "notes"],
+    values: [],
+    skills: ["demo", "notes"],
     all: false,
     global: true
   });
+  assert.deepEqual(
+    parseArgs(["uninstall", "-g", "--skill", "notes", "--skill", "demo", "--skill", "notes"]),
+    {
+      command: "uninstall",
+      values: [],
+      skills: ["notes", "demo"],
+      all: false,
+      global: true
+    }
+  );
   assert.deepEqual(parseArgs(["uninstall"]), {
     command: "uninstall",
     values: [],
@@ -113,9 +125,16 @@ test("parser accepts repository management and install commands", () => {
   assert.throws(() => parseArgs(["install", "--yes"]), /Unknown option/);
   assert.throws(() => parseArgs(["install", "demo"]), /does not accept arguments/);
   assert.throws(() => parseArgs(["uninstall", "--yes"]), /Unknown option/);
+  assert.throws(() => parseArgs(["uninstall", "demo"]), /Usage/);
+  assert.throws(() => parseArgs(["uninstall", "--skill"]), /requires a value/);
+  assert.throws(() => parseArgs(["uninstall", "--skill", "-g"]), /requires a value/);
   assert.throws(
-    () => parseArgs(["uninstall", "demo", "--all"]),
-    /does not accept names with --all/
+    () => parseArgs(["uninstall", "--skill", "demo", "--all"]),
+    /does not accept --skill with --all/
+  );
+  assert.throws(
+    () => parseArgs(["uninstall", "--all", "--skill", "demo"]),
+    /does not accept --skill with --all/
   );
 });
 
@@ -139,11 +158,16 @@ function createCliSkill(root: string, directory: string, name: string): void {
   );
 }
 
-function runCli(cwd: string, args: string[]) {
+function runCli(cwd: string, args: string[], env?: NodeJS.ProcessEnv) {
   return spawnSync(
     process.execPath,
     [join(process.cwd(), "dist/src/cli.js"), ...args],
-    { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
+    {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: env ? { ...process.env, ...env } : process.env
+    }
   );
 }
 
@@ -242,6 +266,36 @@ test("remove and update CLI use repeatable named skill flags", () => {
   }
 });
 
+test("uninstall CLI uses repeatable named skill flags for project and global targets", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-uninstall-named-"));
+  try {
+    const project = join(root, "project");
+    mkdirSync(project);
+    createCliSkill(join(project, ".agents"), "alpha", "alpha");
+    createCliSkill(join(project, ".agents"), "beta", "beta");
+
+    const projectResult = runCli(project, ["uninstall", "--skill", "alpha"]);
+    assert.equal(projectResult.status, 0, projectResult.stderr);
+    assert.equal(existsSync(join(project, ".agents", "skills", "alpha")), false);
+    assert.ok(existsSync(join(project, ".agents", "skills", "beta", "SKILL.md")));
+
+    const home = join(root, "home");
+    createCliSkill(join(home, ".agents"), "alpha", "alpha");
+    createCliSkill(join(home, ".agents"), "beta", "beta");
+
+    const globalResult = runCli(
+      project,
+      ["uninstall", "-g", "--skill", "beta"],
+      { HOME: home }
+    );
+    assert.equal(globalResult.status, 0, globalResult.stderr);
+    assert.ok(existsSync(join(home, ".agents", "skills", "alpha", "SKILL.md")));
+    assert.equal(existsSync(join(home, ".agents", "skills", "beta")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("usage includes the version command", () => {
   assert.match(usage(), /agent-skills version/);
 });
@@ -307,6 +361,50 @@ test("registry list represents missing fields with fallbacks", () => {
 
 test("registry list reports an empty registry", () => {
   assert.equal(stripAnsi(formatRegistryList([])), "No project skills found.");
+});
+
+test("project list discovers valid nested skills and enriches registry entries", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-list-project-"));
+  try {
+    createCliSkill(root, "frontend-design", "frontend-design");
+    createCliSkill(root, "agent-tooling/promote-skills", "promote-skills");
+    mkdirSync(join(root, "skills", "not-a-skill", "agents"), { recursive: true });
+
+    const registered = registryEntry({
+      name: "frontend-design",
+      path: "skills/frontend-design"
+    });
+    const entries = listProjectSkills(root, {
+      version: 2,
+      skills: { "frontend-design": registered }
+    });
+
+    assert.deepEqual(
+      entries.map((entry) => [entry.name, entry.path, entry.source]),
+      [
+        ["promote-skills", "skills/agent-tooling/promote-skills", ""],
+        ["frontend-design", "skills/frontend-design", "owner/repo"]
+      ]
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("list CLI includes valid skills missing from the registry", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-list-disk-"));
+  try {
+    createCliSkill(root, "agent-tooling/promote-skills", "promote-skills");
+
+    const result = runCli(root, ["list"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      stripAnsi(result.stdout),
+      /promote-skills\s+skills\/agent-tooling\/promote-skills/
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("CLI entrypoint detection follows install symlinks", () => {
