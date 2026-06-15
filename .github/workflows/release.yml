@@ -29,20 +29,23 @@ jobs:
         run: npm test
 
       - name: Pack and inspect tarball
+        id: pack
         run: |
           npm pack
+          TARBALL=$(ls bacnh85-agent-skills-*.tgz)
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
           echo "--- tarball contents ---"
-          tar -tzf bacnh85-agent-skills-*.tgz
+          tar -tzf "$TARBALL"
 
       - name: Verify global install from tarball
         run: |
-          npm install -g ./bacnh85-agent-skills-*.tgz
+          npm install -g "${{ steps.pack.outputs.tarball }}"
           agent-skills --help
 
       - name: Verify project-local install
         run: |
           cd "$(mktemp -d)"
-          npm install "$GITHUB_WORKSPACE/bacnh85-agent-skills-*.tgz"
+          npm install "$GITHUB_WORKSPACE/${{ steps.pack.outputs.tarball }}"
           npx agent-skills --help
 
       - name: Publish to npm
