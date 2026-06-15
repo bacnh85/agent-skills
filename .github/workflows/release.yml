@@ -63,9 +63,10 @@ jobs:
       - name: Publish to npm
         if: steps.check.outputs.published == 'false'
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # Diagnostic: show which user the NPM_TOKEN authenticates as.
+          # Use .npmrc file for auth (npm 11.x reads auth from .npmrc not NODE_AUTH_TOKEN by default).
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
           npm whoami
           npm publish
 
