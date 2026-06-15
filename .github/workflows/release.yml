@@ -68,8 +68,12 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # Remove any .npmrc that setup-node wrote, and write our own with the actual token.
-          rm -f .npmrc
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is not configured in GitHub repository settings."
+            echo "::error::Go to https://github.com/bacnh85/agent-skills/settings/secrets/actions"
+            echo "::error::and create a new secret named NPM_TOKEN with your npm automation token."
+            exit 1
+          fi
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
           npm whoami
           npm publish --provenance --access public
