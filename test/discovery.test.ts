@@ -52,3 +52,17 @@ test("discovery uses standard containers, recursive fallback, and direct skill p
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("discovery uses the SKILL.md name when it differs from the directory", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-discover-name-"));
+  try {
+    skill(join(root, "skills", "lm-evaluation-harness"), "evaluating-llms-harness");
+
+    assert.deepEqual(
+      discoverSkills(resolveSource(root)).map((item) => [item.name, item.relativePath]),
+      [["evaluating-llms-harness", "skills/lm-evaluation-harness"]]
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

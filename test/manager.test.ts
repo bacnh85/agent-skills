@@ -15,8 +15,13 @@ import { discoverSkills, resolveSource } from "../src/discovery.js";
 import { addSkills, removeSkills, updateSkills } from "../src/manager.js";
 import { readRegistry } from "../src/registry.js";
 
-function createSkill(root: string, name: string, body = "initial"): string {
-  const path = join(root, "skills", name);
+function createSkill(
+  root: string,
+  name: string,
+  body = "initial",
+  directoryName = name
+): string {
+  const path = join(root, "skills", directoryName);
   mkdirSync(path, { recursive: true });
   writeFileSync(
     join(path, "SKILL.md"),
@@ -87,6 +92,34 @@ test("local update handles changed, unchanged, missing, and legacy entries", () 
     registry.skills.demo.updatable = false;
     writeFileSync(join(repo, "skill-registry.json"), JSON.stringify(registry));
     assert.match(updateSkills(repo, ["demo"])[0].message!, /re-added/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("add and update preserve mismatched source directories", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-source-name-"));
+  try {
+    const sourceRoot = join(root, "source");
+    const skillPath = createSkill(
+      sourceRoot,
+      "evaluating-llms-harness",
+      "initial",
+      "lm-evaluation-harness"
+    );
+    const repo = join(root, "target");
+    const source = resolveSource(sourceRoot);
+
+    assert.equal(
+      addSkills({ repo, source, selected: discoverSkills(source) })[0].name,
+      "evaluating-llms-harness"
+    );
+    const entry = readRegistry(repo).skills["evaluating-llms-harness"];
+    assert.equal(entry.sourcePath, "skills/lm-evaluation-harness");
+    assert.ok(existsSync(join(repo, "skills", "lm-evaluation-harness", "SKILL.md")));
+
+    writeFileSync(join(skillPath, "extra.txt"), "changed");
+    assert.equal(updateSkills(repo, ["evaluating-llms-harness"])[0].action, "updated");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

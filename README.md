@@ -168,11 +168,14 @@ agent-skills add vercel-labs/skills
 agent-skills add https://github.com/acme/skills/tree/main/skills/demo
 agent-skills add ssh://git@github.com/acme/skills.git
 agent-skills add ./my-local-skills
+agent-skills add vercel-labs/skills --skill frontend-design
+agent-skills add vercel-labs/skills --skill frontend-design --skill web-design-guidelines
 ```
 
 A direct skill source or a source containing one skill is selected
 automatically. Sources containing multiple skills open an interactive
-multiselect. Non-interactive callers must use a direct skill URL or path.
+multiselect. Use the repeatable `--skill <name>` option to select exact
+`SKILL.md` frontmatter names without interactive input.
 
 ### List
 
@@ -216,7 +219,7 @@ copied again from their original absolute path.
 ## Command Reference
 
 ```text
-agent-skills add <source>
+agent-skills add <source> [--skill <name>]...
 agent-skills remove [skills...]
 agent-skills list
 agent-skills version

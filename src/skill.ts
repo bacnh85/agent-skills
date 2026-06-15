@@ -1,13 +1,17 @@
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, realpathSync } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { basename, isAbsolute, join, relative, sep } from "node:path";
 
 function isWithin(root: string, path: string): boolean {
   const rel = relative(root, path);
   return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
-export function validateSkill(source: string, expectedName: string, sourceRoot = source): string {
+function inspectSkill(
+  source: string,
+  expectedName: string,
+  sourceRoot = source
+): { content: string; name: string } {
   const root = realpathSync(source);
   if (!isWithin(realpathSync(sourceRoot), root)) {
     throw new Error(`Skill path escapes source root: ${source}`);
@@ -25,10 +29,15 @@ export function validateSkill(source: string, expectedName: string, sourceRoot =
   if (!name || !description) {
     throw new Error(`SKILL.md for "${expectedName}" requires name and description.`);
   }
-  if (name !== expectedName) {
-    throw new Error(`Skill name "${name}" does not match directory name "${expectedName}".`);
-  }
-  return content;
+  return { content, name };
+}
+
+export function skillName(source: string, sourceRoot = source): string {
+  return inspectSkill(source, basename(source), sourceRoot).name;
+}
+
+export function validateSkill(source: string, expectedName: string, sourceRoot = source): string {
+  return inspectSkill(source, expectedName, sourceRoot).content;
 }
 
 export function hashDirectory(root: string): string {

@@ -53,6 +53,31 @@ test("install flattens nested skills and preserves unrelated destinations", () =
   }
 });
 
+test("install uses the declared skill name for mismatched source directories", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-install-name-"));
+  try {
+    const repo = join(root, "repo");
+    createSkill(
+      repo,
+      "skills/lm-evaluation-harness",
+      "evaluating-llms-harness",
+      "content"
+    );
+    const target = join(root, "target");
+
+    const result = installSkills(
+      target,
+      discoverSkills(resolveSource(join(repo, "skills")))
+    )[0];
+
+    assert.equal(result.name, "evaluating-llms-harness");
+    assert.ok(existsSync(join(target, "evaluating-llms-harness", "SKILL.md")));
+    assert.equal(existsSync(join(target, "lm-evaluation-harness")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("install atomically replaces selected existing skills", () => {
   const root = mkdtempSync(join(tmpdir(), "agent-skills-reinstall-"));
   try {

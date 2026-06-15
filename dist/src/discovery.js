@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { validateSkill } from "./skill.js";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { skillName } from "./skill.js";
 const STANDARD_CONTAINERS = ["skills", ".agents/skills", ".claude/skills", ".codex/skills"];
 function normalizeRelativePath(value) {
     const normalized = value.replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");
@@ -149,8 +149,7 @@ export function discoverSkills(source) {
     }
     const unique = [...new Set(directories.map((path) => realpathSync(path)))];
     return unique.map((absolutePath) => {
-        const name = basename(absolutePath);
-        validateSkill(absolutePath, name, root);
+        const name = skillName(absolutePath, root);
         return {
             name,
             absolutePath,

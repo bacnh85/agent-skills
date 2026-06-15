@@ -9,16 +9,8 @@ import {
   statSync
 } from "node:fs";
 import { tmpdir } from "node:os";
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep
-} from "node:path";
-import { validateSkill } from "./skill.js";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { skillName } from "./skill.js";
 import type { DiscoveredSkill, ResolvedSource } from "./types.js";
 
 const STANDARD_CONTAINERS = ["skills", ".agents/skills", ".claude/skills", ".codex/skills"];
@@ -195,8 +187,7 @@ export function discoverSkills(source: ResolvedSource): DiscoveredSkill[] {
 
   const unique = [...new Set(directories.map((path) => realpathSync(path)))];
   return unique.map((absolutePath) => {
-    const name = basename(absolutePath);
-    validateSkill(absolutePath, name, root);
+    const name = skillName(absolutePath, root);
     return {
       name,
       absolutePath,

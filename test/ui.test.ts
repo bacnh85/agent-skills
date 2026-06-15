@@ -11,6 +11,23 @@ test("selection options preserve repository-relative paths", () => {
   );
 });
 
+test("selection options display declared names for mismatched source directories", () => {
+  assert.deepEqual(
+    skillOptions([
+      {
+        name: "evaluating-llms-harness",
+        absolutePath: "/tmp/source/lm-evaluation-harness",
+        relativePath: "skills/lm-evaluation-harness"
+      }
+    ]),
+    [{
+      value: "skills/lm-evaluation-harness",
+      label: "evaluating-llms-harness",
+      hint: "skills/lm-evaluation-harness"
+    }]
+  );
+});
+
 test("non-interactive operations run without suppressing progress callbacks", () => {
   const messages: string[] = [];
   const results = runOperation("Starting", "Finished", false, (progress) => {

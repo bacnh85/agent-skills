@@ -1,6 +1,6 @@
 {
   "name": "@bacnh85/agent-skills",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Manage repository-based AI agent skills from git and local sources.",
   "keywords": [
     "agent-skills",

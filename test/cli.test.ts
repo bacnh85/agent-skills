@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -9,6 +9,7 @@ import {
   formatRegistryList,
   isCliEntrypoint,
   parseArgs,
+  selectNamedSkills,
   shouldCheckForUpdates,
   usage
 } from "../src/cli.js";
@@ -38,6 +39,19 @@ test("parser accepts repository management and install commands", () => {
     command: "add",
     values: ["./skills"]
   });
+  assert.deepEqual(parseArgs(["add", "--skill", "alpha", "./skills"]), {
+    command: "add",
+    values: ["./skills"],
+    skills: ["alpha"]
+  });
+  assert.deepEqual(
+    parseArgs(["add", "./skills", "--skill", "beta", "--skill", "alpha", "--skill", "beta"]),
+    {
+      command: "add",
+      values: ["./skills"],
+      skills: ["beta", "alpha"]
+    }
+  );
   assert.deepEqual(parseArgs(["remove", "a", "b"]), {
     command: "remove",
     values: ["a", "b"]
@@ -77,6 +91,9 @@ test("parser accepts repository management and install commands", () => {
   });
   assert.throws(() => parseArgs(["promote"]), /Unknown command/);
   assert.throws(() => parseArgs(["add", "x", "--yes"]), /Unknown option/);
+  assert.throws(() => parseArgs(["add", "x", "--skill"]), /requires a value/);
+  assert.throws(() => parseArgs(["add", "--skill", "--all", "x"]), /requires a value/);
+  assert.throws(() => parseArgs(["add", "x", "y"]), /Usage/);
   assert.throws(() => parseArgs(["list", "-g"]), /Unknown option: -g/);
   assert.throws(() => parseArgs(["list", "extra"]), /does not accept arguments/);
   assert.throws(() => parseArgs(["version", "extra"]), /does not accept arguments/);
@@ -88,6 +105,90 @@ test("parser accepts repository management and install commands", () => {
     () => parseArgs(["uninstall", "demo", "--all"]),
     /does not accept names with --all/
   );
+});
+
+test("named skill selection uses exact canonical names", () => {
+  const discovered = [
+    { name: "alpha", absolutePath: "/a", relativePath: "skills/a" },
+    { name: "alpha", absolutePath: "/b", relativePath: "skills/b" },
+    { name: "beta", absolutePath: "/c", relativePath: "skills/c" }
+  ];
+  assert.deepEqual(selectNamedSkills(discovered, ["beta"]), [discovered[2]]);
+  assert.throws(() => selectNamedSkills(discovered, ["Beta"]), /not found: Beta/);
+  assert.throws(() => selectNamedSkills(discovered, ["alpha"]), /ambiguous: alpha/);
+});
+
+function createCliSkill(root: string, directory: string, name: string): void {
+  const skill = join(root, "skills", directory);
+  mkdirSync(skill, { recursive: true });
+  writeFileSync(
+    join(skill, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${name} skill.\n---\n`
+  );
+}
+
+function runAdd(cwd: string, source: string, names: string[]) {
+  return spawnSync(
+    process.execPath,
+    [
+      join(process.cwd(), "dist/src/cli.js"),
+      "add",
+      source,
+      ...names.flatMap((name) => ["--skill", name])
+    ],
+    { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
+  );
+}
+
+test("add CLI selects one or multiple named skills without a TTY", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-add-named-"));
+  try {
+    const source = join(root, "source");
+    createCliSkill(source, "alpha-dir", "alpha");
+    createCliSkill(source, "beta-dir", "beta");
+
+    const one = join(root, "one");
+    mkdirSync(one);
+    const oneResult = runAdd(one, source, ["beta"]);
+    assert.equal(oneResult.status, 0, oneResult.stderr);
+    assert.equal(existsSync(join(one, "skills", "alpha-dir")), false);
+    assert.ok(existsSync(join(one, "skills", "beta-dir", "SKILL.md")));
+
+    const multiple = join(root, "multiple");
+    mkdirSync(multiple);
+    const multipleResult = runAdd(multiple, source, ["beta", "alpha"]);
+    assert.equal(multipleResult.status, 0, multipleResult.stderr);
+    assert.ok(existsSync(join(multiple, "skills", "alpha-dir", "SKILL.md")));
+    assert.ok(existsSync(join(multiple, "skills", "beta-dir", "SKILL.md")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("add CLI rejects missing and ambiguous names before modifying the target", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-add-invalid-"));
+  try {
+    const missingSource = join(root, "missing-source");
+    createCliSkill(missingSource, "alpha", "alpha");
+    const missingTarget = join(root, "missing-target");
+    mkdirSync(missingTarget);
+    const missing = runAdd(missingTarget, missingSource, ["unknown"]);
+    assert.notEqual(missing.status, 0);
+    assert.match(missing.stderr, /Skill not found: unknown/);
+    assert.equal(existsSync(join(missingTarget, "skills")), false);
+
+    const ambiguousSource = join(root, "ambiguous-source");
+    createCliSkill(ambiguousSource, "first", "duplicate");
+    createCliSkill(ambiguousSource, "second", "duplicate");
+    const ambiguousTarget = join(root, "ambiguous-target");
+    mkdirSync(ambiguousTarget);
+    const ambiguous = runAdd(ambiguousTarget, ambiguousSource, ["duplicate"]);
+    assert.notEqual(ambiguous.status, 0);
+    assert.match(ambiguous.stderr, /Skill name is ambiguous: duplicate/);
+    assert.equal(existsSync(join(ambiguousTarget, "skills")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("usage includes the version command", () => {

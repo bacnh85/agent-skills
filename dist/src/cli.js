@@ -13,7 +13,7 @@ import { formatOperationResult, runOperation, selectDiscoveredSkills, selectInst
 import { checkForUpdate, presentUpdate, readCurrentVersion } from "./version.js";
 export function usage() {
     return `Usage:
-  agent-skills add <source>
+  agent-skills add <source> [--skill <name>]...
   agent-skills remove [skills...]
   agent-skills list
   agent-skills version
@@ -32,6 +32,36 @@ export function parseArgs(argv) {
         throw new Error(`Unknown command: ${command}`);
     }
     const values = argv.slice(1);
+    if (command === "add") {
+        const sources = [];
+        const skills = [];
+        for (let index = 0; index < values.length; index += 1) {
+            const value = values[index];
+            if (value === "--skill") {
+                const name = values[index + 1];
+                if (!name || name.startsWith("-")) {
+                    throw new Error("--skill requires a value.");
+                }
+                if (!skills.includes(name))
+                    skills.push(name);
+                index += 1;
+            }
+            else if (value.startsWith("-")) {
+                throw new Error(`Unknown option: ${value}`);
+            }
+            else {
+                sources.push(value);
+            }
+        }
+        if (sources.length !== 1) {
+            throw new Error("Usage: agent-skills add <source> [--skill <name>]...");
+        }
+        return {
+            command: "add",
+            values: sources,
+            ...(skills.length ? { skills } : {})
+        };
+    }
     if (command === "install") {
         const allowed = new Set(["-g", "--all"]);
         const option = values.find((value) => value.startsWith("-") && !allowed.has(value));
@@ -67,13 +97,22 @@ export function parseArgs(argv) {
     const option = values.find((value) => value.startsWith("-"));
     if (option)
         throw new Error(`Unknown option: ${option}`);
-    if (command === "add" && values.length !== 1) {
-        throw new Error("Usage: agent-skills add <source>");
-    }
     if ((command === "list" || command === "version") && values.length) {
         throw new Error(`agent-skills ${command} does not accept arguments.`);
     }
     return { command: command, values };
+}
+export function selectNamedSkills(discovered, requested) {
+    const selected = [];
+    for (const name of requested) {
+        const matches = discovered.filter((skill) => skill.name === name);
+        if (!matches.length)
+            throw new Error(`Skill not found: ${name}`);
+        if (matches.length > 1)
+            throw new Error(`Skill name is ambiguous: ${name}`);
+        selected.push(matches[0]);
+    }
+    return selected;
 }
 export function isCliEntrypoint(moduleUrl, argvPath) {
     if (!argvPath)
@@ -223,8 +262,10 @@ async function runCommand(args) {
         const discovered = discoverSkills(source);
         if (!discovered.length)
             throw new Error("No skills found in source.");
-        let selected = discovered;
-        if (discovered.length > 1) {
+        let selected = args.skills
+            ? selectNamedSkills(discovered, args.skills)
+            : discovered;
+        if (!args.skills && discovered.length > 1) {
             if (!process.stdin.isTTY) {
                 throw new Error(`Source contains ${discovered.length} skills; interactive selection requires a TTY. Use a direct skill URL or path.`);
             }
