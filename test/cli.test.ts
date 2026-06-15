@@ -181,12 +181,15 @@ test("uninstall CLI rejects interactive selection without a TTY", () => {
   }
 });
 
-test("package has a git-install-safe prepare script and committed CLI entrypoint", () => {
+test("package ships a built CLI entrypoint and skips legacy lifecycle hooks", () => {
   const manifest = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
 
-  assert.equal(manifest.scripts.prepare, "node scripts/prepare-package.cjs");
-  assert.match(manifest.scripts.install, /npm_package_resolved/);
-  assert.match(manifest.scripts.install, /dist\/src\/cli\.js/);
-  assert.equal(manifest.scripts.prepack, "npm run build");
   assert.equal(manifest.bin["agent-skills"], "./dist/src/cli.js");
+  assert.equal(manifest.scripts.prepack, "npm run build");
+  // Lifecycle scripts added by the "npm install -g GitHub shorthand" workaround
+  // are no longer needed once the package is published to npm.
+  assert.equal(manifest.scripts.install, undefined);
+  assert.equal(manifest.scripts.prepare, undefined);
+  // The shipped `files` allowlist must include the build output, skills, and README.
+  assert.deepEqual(manifest.files, ["dist", "skills", "README.md"]);
 });
