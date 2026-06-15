@@ -2,13 +2,33 @@
   "name": "@bacnh85/agent-skills",
   "version": "0.1.0",
   "description": "Manage repository-based AI agent skills from git and local sources.",
+  "keywords": [
+    "agent-skills",
+    "ai",
+    "agents"
+  ],
+  "homepage": "https://github.com/bacnh85/agent-skills#readme",
+  "bugs": {
+    "url": "https://github.com/bacnh85/agent-skills/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bacnh85/agent-skills.git"
+  },
+  "license": "MIT",
+  "author": "HaiBac Ngo",
   "type": "module",
-  "publishConfig": {
-    "access": "public"
-  },
+  "main": "cli.js",
   "bin": {
-    "agent-skills": "./dist/src/cli.js"
+    "agent-skills": "dist/src/cli.js"
   },
+  "directories": {
+    "test": "test"
+  },
+  "files": [
+    "dist",
+    "skills"
+  ],
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/src/cli.js',0o755)\"",
     "install": "node -e \"const fs=require('node:fs'),r=process.env.npm_package_resolved||'',m=r.match(/github\\.com[:/]([^/]+)\\/([^/#]+?)(?:\\.git)?#([0-9a-f]+)/i)||[],s=m[1]?'https://codeload.github.com/'+m[1]+'/'+m[2].replace(/\\.git$/,'')+'/tar.gz/'+m[3]:'https://codeload.github.com/bacnh85/agent-skills/tar.gz/refs/heads/main';if(fs.existsSync('dist/src/cli.js'))process.exit(0);const t=Buffer.from('IyEvdXNyL2Jpbi9lbnYgbm9kZQppbXBvcnR7c3Bhd25TeW5jfWZyb20ibm9kZTpjaGlsZF9wcm9jZXNzIjsKY29uc3Qgc3BlYz1fX1NQRUNfXzsKY29uc3QgbnBtPXByb2Nlc3MucGxhdGZvcm09PT0id2luMzIiPyJucG0uY21kIjoibnBtIjsKY29uc3QgcmVzdWx0PXNwYXduU3luYyhucG0sWyJleGVjIiwiLS15ZXMiLCItLXBhY2thZ2UiLHNwZWMsIi0tIiwiYWdlbnQtc2tpbGxzIiwuLi5wcm9jZXNzLmFyZ3Yuc2xpY2UoMildLHtzdGRpbzoiaW5oZXJpdCJ9KTsKaWYocmVzdWx0LmVycm9yKXtjb25zb2xlLmVycm9yKHJlc3VsdC5lcnJvci5tZXNzYWdlKTtwcm9jZXNzLmV4aXQoMSl9CnByb2Nlc3MuZXhpdChyZXN1bHQuc3RhdHVzPz8xKTsK','base64').toString().replace('__SPEC__',JSON.stringify(s));fs.mkdirSync('dist/src',{recursive:true});fs.writeFileSync('dist/src/cli.js',t);fs.chmodSync('dist/src/cli.js',0o755);process.exit(0)\"",
@@ -17,15 +37,18 @@
     "test": "npm run build && node --test dist/test/*.test.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "engines": {
-    "node": ">=20"
+  "dependencies": {
+    "@clack/prompts": "^0.11.0",
+    "picocolors": "^1.1.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.8.0"
   },
-  "dependencies": {
-    "@clack/prompts": "^0.11.0",
-    "picocolors": "^1.1.1"
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
