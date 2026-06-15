@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Pack and inspect tarball
+        run: |
+          npm pack
+          echo "--- tarball contents ---"
+          tar -tzf bacnh85-agent-skills-*.tgz
+
+      - name: Verify global install from tarball
+        run: |
+          npm install -g ./bacnh85-agent-skills-*.tgz
+          agent-skills --help
+
+      - name: Verify project-local install
+        run: |
+          cd "$(mktemp -d)"
+          npm install "$GITHUB_WORKSPACE/bacnh85-agent-skills-*.tgz"
+          npx agent-skills --help
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

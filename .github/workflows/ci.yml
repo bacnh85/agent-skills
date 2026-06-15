@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Pack and inspect tarball
+        run: |
+          npm pack
+          echo "--- tarball contents ---"
+          tar -tzf bacnh85-agent-skills-*.tgz
+
+      - name: Verify global install from tarball
+        run: |
+          npm install -g ./bacnh85-agent-skills-*.tgz
+          agent-skills --help
+
+      - name: Verify project-local install
+        run: |
+          cd "$(mktemp -d)"
+          npm install "$GITHUB_WORKSPACE/bacnh85-agent-skills-*.tgz"
+          npx agent-skills --help
