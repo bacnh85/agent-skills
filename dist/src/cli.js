@@ -2,6 +2,7 @@
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { confirm, isCancel } from "@clack/prompts";
 import pc from "picocolors";
 import { resolveInstallTarget, resolveTargetRepo } from "./config.js";
 import { discoverSkills, resolveSource } from "./discovery.js";
@@ -9,11 +10,13 @@ import { discoverInstalledSkills, installSkills, uninstallSkills } from "./insta
 import { addSkills, removeSkills, updateSkills } from "./manager.js";
 import { readRegistry } from "./registry.js";
 import { formatOperationResult, runOperation, selectDiscoveredSkills, selectInstalledSkills, selectRegistrySkills } from "./ui.js";
+import { checkForUpdate, presentUpdate, readCurrentVersion } from "./version.js";
 export function usage() {
     return `Usage:
   agent-skills add <source>
   agent-skills remove [skills...]
   agent-skills list
+  agent-skills version
   agent-skills update [skills...]
   agent-skills install [-g] [--all]
   agent-skills uninstall [skills...] [-g]
@@ -25,7 +28,7 @@ export function parseArgs(argv) {
     if (argv[0] === "--help" || argv[0] === "-h")
         return { values: [] };
     const command = argv[0];
-    if (!["add", "remove", "list", "update", "install", "uninstall"].includes(command)) {
+    if (!["add", "remove", "list", "update", "install", "uninstall", "version"].includes(command)) {
         throw new Error(`Unknown command: ${command}`);
     }
     const values = argv.slice(1);
@@ -67,8 +70,8 @@ export function parseArgs(argv) {
     if (command === "add" && values.length !== 1) {
         throw new Error("Usage: agent-skills add <source>");
     }
-    if (command === "list" && values.length) {
-        throw new Error("agent-skills list does not accept arguments.");
+    if ((command === "list" || command === "version") && values.length) {
+        throw new Error(`agent-skills ${command} does not accept arguments.`);
     }
     return { command: command, values };
 }
@@ -118,10 +121,31 @@ function printResults(results) {
         console.log(formatOperationResult(result));
     }
 }
-async function main() {
-    const args = parseArgs(process.argv.slice(2));
+export function shouldCheckForUpdates(args, env = process.env, stdoutIsTTY = Boolean(process.stdout.isTTY), stdinIsTTY = Boolean(process.stdin.isTTY)) {
+    return Boolean(args.command &&
+        args.command !== "version" &&
+        stdoutIsTTY &&
+        stdinIsTTY &&
+        !env.CI);
+}
+async function runCommand(args) {
     if (!args.command) {
         console.log(usage());
+        return;
+    }
+    if (args.command === "version") {
+        const current = readCurrentVersion();
+        const result = checkForUpdate(current, { force: true });
+        console.log(current);
+        if (result.error) {
+            console.log("Unable to check latest version.");
+        }
+        else if (result.updateAvailable) {
+            console.log(`Latest version: ${result.latest} (update available)`);
+        }
+        else {
+            console.log(`Latest version: ${result.latest}`);
+        }
         return;
     }
     const interactive = Boolean(process.stdout.isTTY);
@@ -214,6 +238,23 @@ async function main() {
     finally {
         source.cleanup();
     }
+}
+export async function main(argv = process.argv.slice(2)) {
+    const args = parseArgs(argv);
+    await runCommand(args);
+    if (!shouldCheckForUpdates(args))
+        return;
+    const result = checkForUpdate(readCurrentVersion());
+    if (!result.updateAvailable)
+        return;
+    const status = await presentUpdate(result, {
+        confirm: async (message) => {
+            const answer = await confirm({ message, initialValue: false });
+            return isCancel(answer) ? false : answer;
+        }
+    });
+    if (status !== 0)
+        throw new Error("Unable to install the latest version.");
 }
 if (isCliEntrypoint(import.meta.url, process.argv[1])) {
     main().catch((error) => {

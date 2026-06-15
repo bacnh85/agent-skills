@@ -23,6 +23,7 @@ Verify the installed CLI:
 
 ```bash
 agent-skills --help
+agent-skills version
 ```
 
 Use it in a project:
@@ -218,11 +219,17 @@ copied again from their original absolute path.
 agent-skills add <source>
 agent-skills remove [skills...]
 agent-skills list
+agent-skills version
 agent-skills update [skills...]
 agent-skills install [-g] [--all]
 agent-skills uninstall [skills...] [-g]
 agent-skills uninstall --all [-g]
 ```
+
+`agent-skills version` prints the installed version and checks npm for the
+latest release. Successful interactive commands check at most once every 24
+hours and offer to install an available update. Choosing the default “later”
+option prints `npm install -g @bacnh85/agent-skills@latest`.
 
 ## Repository Metadata
 

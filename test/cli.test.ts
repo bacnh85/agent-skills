@@ -5,7 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
-import { formatRegistryList, isCliEntrypoint, parseArgs } from "../src/cli.js";
+import {
+  formatRegistryList,
+  isCliEntrypoint,
+  parseArgs,
+  shouldCheckForUpdates,
+  usage
+} from "../src/cli.js";
 import type { RegistryEntry } from "../src/types.js";
 
 const ansi = /\x1B\[[0-9;]*m/g;
@@ -37,6 +43,7 @@ test("parser accepts repository management and install commands", () => {
     values: ["a", "b"]
   });
   assert.deepEqual(parseArgs(["list"]), { command: "list", values: [] });
+  assert.deepEqual(parseArgs(["version"]), { command: "version", values: [] });
   assert.deepEqual(parseArgs(["update"]), { command: "update", values: [] });
   assert.deepEqual(parseArgs(["install"]), {
     command: "install",
@@ -72,6 +79,8 @@ test("parser accepts repository management and install commands", () => {
   assert.throws(() => parseArgs(["add", "x", "--yes"]), /Unknown option/);
   assert.throws(() => parseArgs(["list", "-g"]), /Unknown option: -g/);
   assert.throws(() => parseArgs(["list", "extra"]), /does not accept arguments/);
+  assert.throws(() => parseArgs(["version", "extra"]), /does not accept arguments/);
+  assert.throws(() => parseArgs(["version", "--json"]), /Unknown option/);
   assert.throws(() => parseArgs(["install", "--yes"]), /Unknown option/);
   assert.throws(() => parseArgs(["install", "demo"]), /does not accept arguments/);
   assert.throws(() => parseArgs(["uninstall", "--yes"]), /Unknown option/);
@@ -79,6 +88,21 @@ test("parser accepts repository management and install commands", () => {
     () => parseArgs(["uninstall", "demo", "--all"]),
     /does not accept names with --all/
   );
+});
+
+test("usage includes the version command", () => {
+  assert.match(usage(), /agent-skills version/);
+});
+
+test("automatic update checks require successful interactive command context", () => {
+  const command = parseArgs(["list"]);
+  assert.equal(shouldCheckForUpdates(command, {}, true, true), true);
+  assert.equal(shouldCheckForUpdates(command, { CI: "1" }, true, true), false);
+  assert.equal(shouldCheckForUpdates(command, {}, false, true), false);
+  assert.equal(shouldCheckForUpdates(command, {}, true, false), false);
+  assert.equal(shouldCheckForUpdates(parseArgs([]), {}, true, true), false);
+  assert.equal(shouldCheckForUpdates(parseArgs(["--help"]), {}, true, true), false);
+  assert.equal(shouldCheckForUpdates(parseArgs(["version"]), {}, true, true), false);
 });
 
 test("registry list sorts entries and aligns labeled fields", () => {
