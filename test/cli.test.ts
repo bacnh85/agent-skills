@@ -52,13 +52,19 @@ test("parser accepts repository management and install commands", () => {
       skills: ["beta", "alpha"]
     }
   );
-  assert.deepEqual(parseArgs(["remove", "a", "b"]), {
+  assert.deepEqual(parseArgs(["remove", "--skill", "a", "--skill", "b", "--skill", "a"]), {
     command: "remove",
-    values: ["a", "b"]
+    values: [],
+    skills: ["a", "b"]
   });
   assert.deepEqual(parseArgs(["list"]), { command: "list", values: [] });
   assert.deepEqual(parseArgs(["version"]), { command: "version", values: [] });
   assert.deepEqual(parseArgs(["update"]), { command: "update", values: [] });
+  assert.deepEqual(parseArgs(["update", "--skill", "b", "--skill", "a"]), {
+    command: "update",
+    values: [],
+    skills: ["b", "a"]
+  });
   assert.deepEqual(parseArgs(["install"]), {
     command: "install",
     values: [],
@@ -94,6 +100,12 @@ test("parser accepts repository management and install commands", () => {
   assert.throws(() => parseArgs(["add", "x", "--skill"]), /requires a value/);
   assert.throws(() => parseArgs(["add", "--skill", "--all", "x"]), /requires a value/);
   assert.throws(() => parseArgs(["add", "x", "y"]), /Usage/);
+  assert.throws(() => parseArgs(["remove", "demo"]), /Usage/);
+  assert.throws(() => parseArgs(["update", "demo"]), /Usage/);
+  assert.throws(() => parseArgs(["remove", "--skill"]), /requires a value/);
+  assert.throws(() => parseArgs(["update", "--skill", "--all"]), /requires a value/);
+  assert.throws(() => parseArgs(["remove", "--all"]), /Unknown option/);
+  assert.throws(() => parseArgs(["update", "--all"]), /Unknown option/);
   assert.throws(() => parseArgs(["list", "-g"]), /Unknown option: -g/);
   assert.throws(() => parseArgs(["list", "extra"]), /does not accept arguments/);
   assert.throws(() => parseArgs(["version", "extra"]), /does not accept arguments/);
@@ -127,17 +139,20 @@ function createCliSkill(root: string, directory: string, name: string): void {
   );
 }
 
-function runAdd(cwd: string, source: string, names: string[]) {
+function runCli(cwd: string, args: string[]) {
   return spawnSync(
     process.execPath,
-    [
-      join(process.cwd(), "dist/src/cli.js"),
-      "add",
-      source,
-      ...names.flatMap((name) => ["--skill", name])
-    ],
+    [join(process.cwd(), "dist/src/cli.js"), ...args],
     { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
   );
+}
+
+function runAdd(cwd: string, source: string, names: string[]) {
+  return runCli(cwd, [
+    "add",
+    source,
+    ...names.flatMap((name) => ["--skill", name])
+  ]);
 }
 
 test("add CLI selects one or multiple named skills without a TTY", () => {
@@ -186,6 +201,42 @@ test("add CLI rejects missing and ambiguous names before modifying the target", 
     assert.notEqual(ambiguous.status, 0);
     assert.match(ambiguous.stderr, /Skill name is ambiguous: duplicate/);
     assert.equal(existsSync(join(ambiguousTarget, "skills")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remove and update CLI use repeatable named skill flags", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-manage-named-"));
+  try {
+    const source = join(root, "source");
+    createCliSkill(source, "alpha", "alpha");
+    createCliSkill(source, "beta", "beta");
+    const target = join(root, "target");
+    mkdirSync(target);
+    const added = runAdd(target, source, ["alpha", "beta"]);
+    assert.equal(added.status, 0, added.stderr);
+
+    writeFileSync(
+      join(source, "skills", "alpha", "SKILL.md"),
+      "---\nname: alpha\ndescription: alpha skill.\n---\n\nupdated\n"
+    );
+    writeFileSync(
+      join(source, "skills", "beta", "SKILL.md"),
+      "---\nname: beta\ndescription: beta skill.\n---\n\nupdated\n"
+    );
+    const updated = runCli(target, ["update", "--skill", "alpha"]);
+    assert.equal(updated.status, 0, updated.stderr);
+    assert.match(readFileSync(join(target, "skills", "alpha", "SKILL.md"), "utf8"), /updated/);
+    assert.doesNotMatch(
+      readFileSync(join(target, "skills", "beta", "SKILL.md"), "utf8"),
+      /updated/
+    );
+
+    const removed = runCli(target, ["remove", "--skill", "beta"]);
+    assert.equal(removed.status, 0, removed.stderr);
+    assert.ok(existsSync(join(target, "skills", "alpha", "SKILL.md")));
+    assert.equal(existsSync(join(target, "skills", "beta")), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import type { RegistryEntry } from "./types.js";
-import type { DiscoveredSkill } from "./types.js";
+import type { DiscoveredSkill, RegistryEntry } from "./types.js";
 export interface Args {
     command?: "add" | "remove" | "list" | "update" | "install" | "uninstall" | "version";
     values: string[];

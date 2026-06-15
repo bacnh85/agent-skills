@@ -13,7 +13,7 @@ import {
 } from "./installer.js";
 import { addSkills, removeSkills, updateSkills } from "./manager.js";
 import { readRegistry } from "./registry.js";
-import type { RegistryEntry } from "./types.js";
+import type { DiscoveredSkill, RegistryEntry } from "./types.js";
 import {
   formatOperationResult,
   runOperation,
@@ -26,7 +26,6 @@ import {
   presentUpdate,
   readCurrentVersion
 } from "./version.js";
-import type { DiscoveredSkill } from "./types.js";
 
 export interface Args {
   command?: "add" | "remove" | "list" | "update" | "install" | "uninstall" | "version";
@@ -39,13 +38,37 @@ export interface Args {
 export function usage(): string {
   return `Usage:
   agent-skills add <source> [--skill <name>]...
-  agent-skills remove [skills...]
+  agent-skills remove [--skill <name>]...
   agent-skills list
   agent-skills version
-  agent-skills update [skills...]
+  agent-skills update [--skill <name>]...
   agent-skills install [-g] [--all]
   agent-skills uninstall [skills...] [-g]
   agent-skills uninstall --all [-g]`;
+}
+
+function parseSkillOptions(values: string[]): {
+  positionals: string[];
+  skills: string[];
+} {
+  const positionals: string[] = [];
+  const skills: string[] = [];
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    if (value === "--skill") {
+      const name = values[index + 1];
+      if (!name || name.startsWith("-")) {
+        throw new Error("--skill requires a value.");
+      }
+      if (!skills.includes(name)) skills.push(name);
+      index += 1;
+    } else if (value.startsWith("-")) {
+      throw new Error(`Unknown option: ${value}`);
+    } else {
+      positionals.push(value);
+    }
+  }
+  return { positionals, skills };
 }
 
 export function parseArgs(argv: string[]): Args {
@@ -57,29 +80,26 @@ export function parseArgs(argv: string[]): Args {
   }
   const values = argv.slice(1);
   if (command === "add") {
-    const sources: string[] = [];
-    const skills: string[] = [];
-    for (let index = 0; index < values.length; index += 1) {
-      const value = values[index];
-      if (value === "--skill") {
-        const name = values[index + 1];
-        if (!name || name.startsWith("-")) {
-          throw new Error("--skill requires a value.");
-        }
-        if (!skills.includes(name)) skills.push(name);
-        index += 1;
-      } else if (value.startsWith("-")) {
-        throw new Error(`Unknown option: ${value}`);
-      } else {
-        sources.push(value);
-      }
-    }
-    if (sources.length !== 1) {
+    const { positionals, skills } = parseSkillOptions(values);
+    if (positionals.length !== 1) {
       throw new Error("Usage: agent-skills add <source> [--skill <name>]...");
     }
     return {
       command: "add",
-      values: sources,
+      values: positionals,
+      ...(skills.length ? { skills } : {})
+    };
+  }
+  if (command === "remove" || command === "update") {
+    const { positionals, skills } = parseSkillOptions(values);
+    if (positionals.length) {
+      throw new Error(
+        `Usage: agent-skills ${command} [--skill <name>]...`
+      );
+    }
+    return {
+      command,
+      values: [],
       ...(skills.length ? { skills } : {})
     };
   }
@@ -280,7 +300,7 @@ async function runCommand(args: Args): Promise<void> {
     return;
   }
   if (args.command === "remove") {
-    let names = args.values;
+    let names = args.skills ?? [];
     if (!names.length) {
       if (!process.stdin.isTTY) {
         throw new Error("No skills specified and interactive selection is unavailable.");
@@ -300,14 +320,15 @@ async function runCommand(args: Args): Promise<void> {
     return;
   }
   if (args.command === "update") {
-    const count = args.values.length || Object.keys(readRegistry(repo).skills).length;
+    const names = args.skills ?? [];
+    const count = names.length || Object.keys(readRegistry(repo).skills).length;
     printResults(
       runOperation(
         `Updating ${count} skill${count === 1 ? "" : "s"}...`,
         `Checked ${count} skill${count === 1 ? "" : "s"}`,
         interactive,
         (progress) =>
-          updateSkills(repo, args.values, (name, index, total) => {
+          updateSkills(repo, names, (name, index, total) => {
             progress.message(`Updating ${name} (${index}/${total})...`);
           })
       )

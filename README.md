@@ -190,7 +190,7 @@ agent-skills list
 Remove named skills:
 
 ```bash
-agent-skills remove demo another-skill
+agent-skills remove --skill demo --skill another-skill
 ```
 
 Run without names to select skills interactively:
@@ -204,7 +204,7 @@ agent-skills remove
 Update named skills from their recorded sources:
 
 ```bash
-agent-skills update demo another-skill
+agent-skills update --skill demo --skill another-skill
 ```
 
 Run without names to update every registered skill:
@@ -220,10 +220,10 @@ copied again from their original absolute path.
 
 ```text
 agent-skills add <source> [--skill <name>]...
-agent-skills remove [skills...]
+agent-skills remove [--skill <name>]...
 agent-skills list
 agent-skills version
-agent-skills update [skills...]
+agent-skills update [--skill <name>]...
 agent-skills install [-g] [--all]
 agent-skills uninstall [skills...] [-g]
 agent-skills uninstall --all [-g]
