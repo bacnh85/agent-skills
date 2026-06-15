@@ -48,7 +48,20 @@ jobs:
           npm install "$GITHUB_WORKSPACE/${{ steps.pack.outputs.tarball }}"
           npx agent-skills --help
 
+      - name: Check if version is already published
+        id: check
+        run: |
+          VERSION=$(node -e "console.log(require('./package.json').version)")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if npm view "@bacnh85/agent-skills@$VERSION" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "Version $VERSION is already published, skipping npm publish."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm
+        if: steps.check.outputs.published == 'false'
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
