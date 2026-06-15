@@ -13,7 +13,7 @@ those skills into project or user directories.
 Install the CLI globally from GitHub:
 
 ```bash
-npm install -g bacnh85/agent-skills
+npm install -g @bacnh85/agent-skills
 ```
 
 Verify the installed CLI:
@@ -25,7 +25,7 @@ agent-skills --help
 You can also install it into a project and run it with `npx`:
 
 ```bash
-npm install bacnh85/agent-skills
+npm install @bacnh85/agent-skills
 npx agent-skills --help
 ```
 

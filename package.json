@@ -1,6 +1,6 @@
 {
   "name": "@bacnh85/agent-skills",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Manage repository-based AI agent skills from git and local sources.",
   "keywords": [
     "agent-skills",
@@ -18,9 +18,9 @@
   "license": "MIT",
   "author": "HaiBac Ngo",
   "type": "module",
-  "main": "cli.js",
+  "main": "dist/src/cli.js",
   "bin": {
-    "agent-skills": "dist/src/cli.js"
+    "agent-skills": "./dist/src/cli.js"
   },
   "directories": {
     "test": "test"
