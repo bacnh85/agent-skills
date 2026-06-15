@@ -26,11 +26,10 @@ test("non-interactive operations run without suppressing progress callbacks", ()
 });
 
 test("operation results share consistent formatting", () => {
-  const ansi = /\x1B\[[0-9;]*m/g;
   const formatted = formatOperationResult({
     name: "demo",
     action: "skipped",
     message: "source unavailable"
   });
-  assert.equal(formatted.replace(ansi, ""), "skipped: demo (source unavailable)");
+  assert.equal(formatted.replace(/\x1B\[[0-9;]*m/g, ""), "skipped: demo (source unavailable)");
 });

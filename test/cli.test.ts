@@ -8,6 +8,11 @@ import { pathToFileURL } from "node:url";
 import { formatRegistryList, isCliEntrypoint, parseArgs } from "../src/cli.js";
 import type { RegistryEntry } from "../src/types.js";
 
+const ansi = /\x1B\[[0-9;]*m/g;
+function stripAnsi(s: string): string {
+  return s.replace(ansi, "");
+}
+
 function registryEntry(overrides: Partial<RegistryEntry>): RegistryEntry {
   return {
     name: "example",
@@ -95,7 +100,7 @@ test("registry list sorts entries and aligns labeled fields", () => {
       updatedAt: "2026-01-02T03:04:05.000Z"
     })
   ]);
-  const lines = output.split("\n");
+  const lines = stripAnsi(output).split("\n");
 
   assert.equal(lines[0], "Project Skills");
   assert.equal(lines[1], "");
@@ -119,13 +124,13 @@ test("registry list represents missing fields with fallbacks", () => {
   ]);
 
   assert.match(
-    output,
+    stripAnsi(output),
     /Source: -\s+Ref: -\s+Commit: -\s+Updated: -/
   );
 });
 
 test("registry list reports an empty registry", () => {
-  assert.equal(formatRegistryList([]), "No project skills found.");
+  assert.equal(stripAnsi(formatRegistryList([])), "No project skills found.");
 });
 
 test("CLI entrypoint detection follows install symlinks", () => {
