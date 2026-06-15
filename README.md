@@ -10,7 +10,10 @@ those skills into project or user directories.
 
 ## Install the CLI
 
-Install the CLI globally from GitHub:
+The package is published on npm. The recommended install paths use the npm
+registry.
+
+Install the CLI globally from npm:
 
 ```bash
 npm install -g @bacnh85/agent-skills
@@ -22,23 +25,31 @@ Verify the installed CLI:
 agent-skills --help
 ```
 
-You can also install it into a project and run it with `npx`:
+Use it in a project:
 
 ```bash
 npm install @bacnh85/agent-skills
 npx agent-skills --help
 ```
 
-Pin a branch, tag, or commit by adding a `#ref` suffix:
+Run the CLI without installing it first:
 
 ```bash
-npm install -g bacnh85/agent-skills#main
-npm install bacnh85/agent-skills#main
+npx @bacnh85/agent-skills --help
 ```
 
-SSH/Git installs also work on development machines with GitHub SSH keys:
+Pin a specific version, tag, or commit:
 
 ```bash
+npm install -g @bacnh85/agent-skills@0.1.1
+npm install -g @bacnh85/agent-skills@latest
+```
+
+GitHub-shorthand installs (`bacnh85/agent-skills`) and SSH/Git installs are
+still supported but are no longer the primary install path:
+
+```bash
+npm install -g bacnh85/agent-skills
 npm install -g git+ssh://git@github.com/bacnh85/agent-skills.git
 ```
 
