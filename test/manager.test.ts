@@ -30,6 +30,15 @@ function createSkill(
   return path;
 }
 
+function createRootSkill(root: string, name: string, body = "initial"): string {
+  mkdirSync(root, { recursive: true });
+  writeFileSync(
+    join(root, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${name} skill.\n---\n\n${body}\n`
+  );
+  return root;
+}
+
 test("add preserves paths, no-ops unchanged sources, rejects conflicts, and records history", () => {
   const root = mkdtempSync(join(tmpdir(), "agent-skills-add-"));
   try {
@@ -50,6 +59,57 @@ test("add preserves paths, no-ops unchanged sources, rejects conflicts, and reco
       /already registered/
     );
     assert.equal(readFileSync(join(repo, "skill-history.jsonl"), "utf8").trim().split("\n").length, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("add installs root-level source skills under skills/name and preserves sourcePath", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-add-root-"));
+  try {
+    const sourceRoot = join(root, "source");
+    createRootSkill(sourceRoot, "demo");
+    const repo = join(root, "target");
+    const source = resolveSource(sourceRoot);
+    const selected = discoverSkills(source);
+
+    assert.equal(selected[0].relativePath, ".");
+    const added = addSkills({ repo, source, selected })[0];
+    assert.equal(added.action, "added");
+    assert.equal(added.path, "skills/demo");
+    assert.ok(existsSync(join(repo, "skills", "demo", "SKILL.md")));
+
+    const entry = readRegistry(repo).skills.demo;
+    assert.equal(entry.path, "skills/demo");
+    assert.equal(entry.sourcePath, ".");
+    assert.equal(addSkills({ repo, source, selected })[0].action, "unchanged");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("add installs top-level source skill directories under skills/path", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-add-top-level-dir-"));
+  try {
+    const sourceRoot = join(root, "source");
+    const skillPath = join(sourceRoot, "brave-search");
+    mkdirSync(skillPath, { recursive: true });
+    writeFileSync(
+      join(skillPath, "SKILL.md"),
+      "---\nname: brave-search\ndescription: Brave Search skill.\n---\n"
+    );
+    const repo = join(root, "target");
+    const source = resolveSource(sourceRoot);
+    const selected = discoverSkills(source);
+
+    assert.equal(selected[0].relativePath, "brave-search");
+    const added = addSkills({ repo, source, selected })[0];
+    assert.equal(added.path, "skills/brave-search");
+    assert.ok(existsSync(join(repo, "skills", "brave-search", "SKILL.md")));
+
+    const entry = readRegistry(repo).skills["brave-search"];
+    assert.equal(entry.path, "skills/brave-search");
+    assert.equal(entry.sourcePath, "brave-search");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

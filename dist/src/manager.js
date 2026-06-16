@@ -10,13 +10,20 @@ function destinationFor(repo, relativePath) {
         throw new Error(`Unsafe destination: ${relativePath}`);
     return destination;
 }
+function registryPathFor(skill) {
+    if (skill.relativePath === ".")
+        return `skills/${skill.name}`;
+    return skill.relativePath.startsWith("skills/")
+        ? skill.relativePath
+        : `skills/${skill.relativePath}`;
+}
 function stageSkills(repo, source, selected) {
     mkdirSync(repo, { recursive: true });
     const root = mkdtempSync(join(repo, ".agent-skills-stage-"));
     const staged = new Map();
     const now = new Date().toISOString();
     const entries = selected.map((skill, index) => {
-        const path = skill.relativePath === "." ? skill.name : skill.relativePath;
+        const path = registryPathFor(skill);
         const target = join(root, String(index));
         cpSync(skill.absolutePath, target, { recursive: true, dereference: false });
         validateSkill(target, skill.name, target);

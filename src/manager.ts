@@ -25,6 +25,13 @@ function destinationFor(repo: string, relativePath: string): string {
   return destination;
 }
 
+function registryPathFor(skill: DiscoveredSkill): string {
+  if (skill.relativePath === ".") return `skills/${skill.name}`;
+  return skill.relativePath.startsWith("skills/")
+    ? skill.relativePath
+    : `skills/${skill.relativePath}`;
+}
+
 function stageSkills(
   repo: string,
   source: ResolvedSource,
@@ -35,7 +42,7 @@ function stageSkills(
   const staged = new Map<string, string>();
   const now = new Date().toISOString();
   const entries = selected.map((skill, index) => {
-    const path = skill.relativePath === "." ? skill.name : skill.relativePath;
+    const path = registryPathFor(skill);
     const target = join(root, String(index));
     cpSync(skill.absolutePath, target, { recursive: true, dereference: false });
     validateSkill(target, skill.name, target);

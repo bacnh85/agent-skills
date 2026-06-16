@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import {
+  formatInstalledList,
   formatRegistryList,
   isCliEntrypoint,
   listProjectSkills,
@@ -45,6 +46,11 @@ test("parser accepts repository management and install commands", () => {
     values: ["./skills"],
     skills: ["alpha"]
   });
+  assert.deepEqual(parseArgs(["add", "./skills", "-s", "alpha"]), {
+    command: "add",
+    values: ["./skills"],
+    skills: ["alpha"]
+  });
   assert.deepEqual(
     parseArgs(["add", "./skills", "--skill", "beta", "--skill", "alpha", "--skill", "beta"]),
     {
@@ -58,13 +64,41 @@ test("parser accepts repository management and install commands", () => {
     values: [],
     skills: ["a", "b"]
   });
+  assert.deepEqual(parseArgs(["remove", "-s", "alpha"]), {
+    command: "remove",
+    values: [],
+    skills: ["alpha"]
+  });
   assert.deepEqual(parseArgs(["list"]), { command: "list", values: [] });
+  assert.deepEqual(parseArgs(["list", "--installed"]), {
+    command: "list",
+    values: [],
+    installed: true,
+    global: false
+  });
+  assert.deepEqual(parseArgs(["list", "--installed", "-g"]), {
+    command: "list",
+    values: [],
+    installed: true,
+    global: true
+  });
+  assert.deepEqual(parseArgs(["list", "--installed", "--global"]), {
+    command: "list",
+    values: [],
+    installed: true,
+    global: true
+  });
   assert.deepEqual(parseArgs(["version"]), { command: "version", values: [] });
   assert.deepEqual(parseArgs(["update"]), { command: "update", values: [] });
   assert.deepEqual(parseArgs(["update", "--skill", "b", "--skill", "a"]), {
     command: "update",
     values: [],
     skills: ["b", "a"]
+  });
+  assert.deepEqual(parseArgs(["update", "-s", "alpha"]), {
+    command: "update",
+    values: [],
+    skills: ["alpha"]
   });
   assert.deepEqual(parseArgs(["install"]), {
     command: "install",
@@ -78,10 +112,23 @@ test("parser accepts repository management and install commands", () => {
     all: true,
     global: true
   });
+  assert.deepEqual(parseArgs(["install", "--global", "--all"]), {
+    command: "install",
+    values: [],
+    all: true,
+    global: true
+  });
   assert.deepEqual(parseArgs(["uninstall", "--skill", "demo", "-g", "--skill", "notes"]), {
     command: "uninstall",
     values: [],
     skills: ["demo", "notes"],
+    all: false,
+    global: true
+  });
+  assert.deepEqual(parseArgs(["uninstall", "--global", "-s", "alpha"]), {
+    command: "uninstall",
+    values: [],
+    skills: ["alpha"],
     all: false,
     global: true
   });
@@ -119,6 +166,7 @@ test("parser accepts repository management and install commands", () => {
   assert.throws(() => parseArgs(["remove", "--all"]), /Unknown option/);
   assert.throws(() => parseArgs(["update", "--all"]), /Unknown option/);
   assert.throws(() => parseArgs(["list", "-g"]), /Unknown option: -g/);
+  assert.throws(() => parseArgs(["list", "--global"]), /Unknown option: --global/);
   assert.throws(() => parseArgs(["list", "extra"]), /does not accept arguments/);
   assert.throws(() => parseArgs(["version", "extra"]), /does not accept arguments/);
   assert.throws(() => parseArgs(["version", "--json"]), /Unknown option/);
@@ -154,6 +202,14 @@ function createCliSkill(root: string, directory: string, name: string): void {
   mkdirSync(skill, { recursive: true });
   writeFileSync(
     join(skill, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${name} skill.\n---\n`
+  );
+}
+
+function createCliRootSkill(root: string, name: string): void {
+  mkdirSync(root, { recursive: true });
+  writeFileSync(
+    join(root, "SKILL.md"),
     `---\nname: ${name}\ndescription: ${name} skill.\n---\n`
   );
 }
@@ -202,6 +258,38 @@ test("add CLI selects one or multiple named skills without a TTY", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("add CLI installs a top-level local skill under skills/name", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-add-root-"));
+  try {
+    const source = join(root, "source");
+    createCliRootSkill(source, "root-demo");
+    const target = join(root, "target");
+    mkdirSync(target);
+
+    const result = runCli(target, ["add", source, "-s", "root-demo"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(existsSync(join(target, "skills", "root-demo", "SKILL.md")));
+    const registry = JSON.parse(readFileSync(join(target, "skill-registry.json"), "utf8"));
+    assert.equal(registry.skills["root-demo"].path, "skills/root-demo");
+    assert.equal(registry.skills["root-demo"].sourcePath, ".");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("installed list formatter reports empty and sorted installed skills", () => {
+  const output = stripAnsi(formatInstalledList([
+    { name: "zeta", absolutePath: "/tmp/zeta", relativePath: "zeta" },
+    { name: "alpha", absolutePath: "/tmp/alpha", relativePath: "alpha" }
+  ], "/tmp/skills"));
+
+  assert.match(output, /^Installed Skills\n\nalpha\s+\/tmp\/alpha\nzeta\s+\/tmp\/zeta/m);
+  assert.equal(
+    stripAnsi(formatInstalledList([], "/tmp/skills")),
+    "No installed skills found in /tmp/skills."
+  );
 });
 
 test("add CLI rejects missing and ambiguous names before modifying the target", () => {
@@ -402,6 +490,56 @@ test("list CLI includes valid skills missing from the registry", () => {
       stripAnsi(result.stdout),
       /promote-skills\s+skills\/agent-tooling\/promote-skills/
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("list CLI can show project and global installed skills", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-list-installed-"));
+  try {
+    const project = join(root, "project");
+    mkdirSync(project);
+    createCliSkill(join(project, ".agents"), "beta", "beta");
+    createCliSkill(join(project, ".agents"), "alpha", "alpha");
+
+    const projectResult = runCli(project, ["list", "--installed"]);
+    assert.equal(projectResult.status, 0, projectResult.stderr);
+    const projectOutput = stripAnsi(projectResult.stdout);
+    assert.match(projectOutput, /Installed Skills/);
+    assert.match(projectOutput, /alpha\s+.*\.agents\/skills\/alpha/);
+    assert.match(projectOutput, /beta\s+.*\.agents\/skills\/beta/);
+    assert.ok(projectOutput.indexOf("alpha") < projectOutput.indexOf("beta"));
+
+    const home = join(root, "home");
+    createCliSkill(join(home, ".agents"), "global-alpha", "global-alpha");
+    const globalResult = runCli(
+      project,
+      ["list", "--installed", "--global"],
+      { HOME: home }
+    );
+    assert.equal(globalResult.status, 0, globalResult.stderr);
+    assert.match(
+      stripAnsi(globalResult.stdout),
+      /global-alpha\s+.*\.agents\/skills\/global-alpha/
+    );
+
+    const globalShortResult = runCli(
+      project,
+      ["list", "--installed", "-g"],
+      { HOME: home }
+    );
+    assert.equal(globalShortResult.status, 0, globalShortResult.stderr);
+    assert.match(
+      stripAnsi(globalShortResult.stdout),
+      /global-alpha\s+.*\.agents\/skills\/global-alpha/
+    );
+
+    const empty = join(root, "empty");
+    mkdirSync(empty);
+    const emptyResult = runCli(empty, ["list", "--installed"]);
+    assert.equal(emptyResult.status, 0, emptyResult.stderr);
+    assert.match(stripAnsi(emptyResult.stdout), /No installed skills found in .*\.agents\/skills\./);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

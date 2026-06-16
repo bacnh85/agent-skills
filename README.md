@@ -100,12 +100,14 @@ Install selected skills for the current user:
 
 ```bash
 agent-skills install -g
+agent-skills install --global
 ```
 
 Install every skill for the current user:
 
 ```bash
 agent-skills install -g --all
+agent-skills install --global --all
 ```
 
 Global skills are installed in:
@@ -127,6 +129,7 @@ Remove named skills from the current project:
 
 ```bash
 agent-skills uninstall --skill demo --skill notes
+agent-skills uninstall -s demo -s notes
 ```
 
 Run without names to select installed project skills interactively:
@@ -141,11 +144,12 @@ Remove every installed project skill:
 agent-skills uninstall --all
 ```
 
-Use `-g` with named, interactive, or `--all` forms to remove skills from
-`~/.agents/skills/`:
+Use `-g` or `--global` with named, interactive, or `--all` forms to remove
+skills from `~/.agents/skills/`:
 
 ```bash
 agent-skills uninstall --skill demo -g
+agent-skills uninstall -s demo --global
 agent-skills uninstall -g
 agent-skills uninstall --all -g
 ```
@@ -169,13 +173,14 @@ agent-skills add https://github.com/acme/skills/tree/main/skills/demo
 agent-skills add ssh://git@github.com/acme/skills.git
 agent-skills add ./my-local-skills
 agent-skills add vercel-labs/skills --skill frontend-design
+agent-skills add vercel-labs/skills -s frontend-design
 agent-skills add vercel-labs/skills --skill frontend-design --skill web-design-guidelines
 ```
 
 A direct skill source or a source containing one skill is selected
 automatically. Sources containing multiple skills open an interactive
-multiselect. Use the repeatable `--skill <name>` option to select exact
-`SKILL.md` frontmatter names without interactive input.
+multiselect. Use the repeatable `-s <name>` or `--skill <name>` option to
+select exact `SKILL.md` frontmatter names without interactive input.
 
 ### List
 
@@ -185,12 +190,21 @@ List skills registered in the curated repository:
 agent-skills list
 ```
 
+List skills installed for agents in the current project or current user:
+
+```bash
+agent-skills list --installed
+agent-skills list --installed -g
+agent-skills list --installed --global
+```
+
 ### Remove
 
 Remove named skills:
 
 ```bash
 agent-skills remove --skill demo --skill another-skill
+agent-skills remove -s demo -s another-skill
 ```
 
 Run without names to select skills interactively:
@@ -205,6 +219,7 @@ Update named skills from their recorded sources:
 
 ```bash
 agent-skills update --skill demo --skill another-skill
+agent-skills update -s demo -s another-skill
 ```
 
 Run without names to update every registered skill:
@@ -219,14 +234,14 @@ copied again from their original absolute path.
 ## Command Reference
 
 ```text
-agent-skills add <source> [--skill <name>]...
-agent-skills remove [--skill <name>]...
-agent-skills list
+agent-skills add <source> [-s|--skill <name>]...
+agent-skills remove [-s|--skill <name>]...
+agent-skills list [--installed] [-g|--global]
 agent-skills version
-agent-skills update [--skill <name>]...
-agent-skills install [-g] [--all]
-agent-skills uninstall [--skill <name>]... [-g]
-agent-skills uninstall --all [-g]
+agent-skills update [-s|--skill <name>]...
+agent-skills install [-g|--global] [--all]
+agent-skills uninstall [-s|--skill <name>]... [-g|--global]
+agent-skills uninstall --all [-g|--global]
 ```
 
 `agent-skills version` prints the installed version and checks npm for the

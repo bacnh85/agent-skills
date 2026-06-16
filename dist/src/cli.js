@@ -13,14 +13,14 @@ import { formatOperationResult, runOperation, selectDiscoveredSkills, selectInst
 import { checkForUpdate, presentUpdate, readCurrentVersion } from "./version.js";
 export function usage() {
     return `Usage:
-  agent-skills add <source> [--skill <name>]...
-  agent-skills remove [--skill <name>]...
-  agent-skills list
+  agent-skills add <source> [-s|--skill <name>]...
+  agent-skills remove [-s|--skill <name>]...
+  agent-skills list [--installed] [-g|--global]
   agent-skills version
-  agent-skills update [--skill <name>]...
-  agent-skills install [-g] [--all]
-  agent-skills uninstall [--skill <name>]... [-g]
-  agent-skills uninstall --all [-g]`;
+  agent-skills update [-s|--skill <name>]...
+  agent-skills install [-g|--global] [--all]
+  agent-skills uninstall [-s|--skill <name>]... [-g|--global]
+  agent-skills uninstall --all [-g|--global]`;
 }
 function parseSkillOptions(values, allowedOptions = new Set()) {
     const positionals = [];
@@ -28,10 +28,10 @@ function parseSkillOptions(values, allowedOptions = new Set()) {
     const options = new Set();
     for (let index = 0; index < values.length; index += 1) {
         const value = values[index];
-        if (value === "--skill") {
+        if (value === "--skill" || value === "-s") {
             const name = values[index + 1];
             if (!name || name.startsWith("-")) {
-                throw new Error("--skill requires a value.");
+                throw new Error(`${value} requires a value.`);
             }
             if (!skills.includes(name))
                 skills.push(name);
@@ -62,7 +62,7 @@ export function parseArgs(argv) {
     if (command === "add") {
         const { positionals, skills } = parseSkillOptions(values);
         if (positionals.length !== 1) {
-            throw new Error("Usage: agent-skills add <source> [--skill <name>]...");
+            throw new Error("Usage: agent-skills add <source> [-s|--skill <name>]...");
         }
         return {
             command: "add",
@@ -73,7 +73,7 @@ export function parseArgs(argv) {
     if (command === "remove" || command === "update") {
         const { positionals, skills } = parseSkillOptions(values);
         if (positionals.length) {
-            throw new Error(`Usage: agent-skills ${command} [--skill <name>]...`);
+            throw new Error(`Usage: agent-skills ${command} [-s|--skill <name>]...`);
         }
         return {
             command,
@@ -82,7 +82,7 @@ export function parseArgs(argv) {
         };
     }
     if (command === "install") {
-        const allowed = new Set(["-g", "--all"]);
+        const allowed = new Set(["-g", "--global", "--all"]);
         const option = values.find((value) => value.startsWith("-") && !allowed.has(value));
         if (option)
             throw new Error(`Unknown option: ${option}`);
@@ -93,13 +93,13 @@ export function parseArgs(argv) {
             command: "install",
             values: [],
             all: values.includes("--all"),
-            global: values.includes("-g")
+            global: values.includes("-g") || values.includes("--global")
         };
     }
     if (command === "uninstall") {
-        const { positionals, skills, options } = parseSkillOptions(values, new Set(["-g", "--all"]));
+        const { positionals, skills, options } = parseSkillOptions(values, new Set(["-g", "--global", "--all"]));
         if (positionals.length) {
-            throw new Error("Usage: agent-skills uninstall [--skill <name>]... [-g]");
+            throw new Error("Usage: agent-skills uninstall [-s|--skill <name>]... [-g|--global]");
         }
         const all = options.has("--all");
         if (all && skills.length) {
@@ -110,7 +110,27 @@ export function parseArgs(argv) {
             values: [],
             ...(skills.length ? { skills } : {}),
             all,
-            global: options.has("-g")
+            global: options.has("-g") || options.has("--global")
+        };
+    }
+    if (command === "list") {
+        const allowed = new Set(["--installed", "-g", "--global"]);
+        const option = values.find((value) => value.startsWith("-") && !allowed.has(value));
+        if (option)
+            throw new Error(`Unknown option: ${option}`);
+        const positional = values.find((value) => !value.startsWith("-"));
+        if (positional)
+            throw new Error("agent-skills list does not accept arguments.");
+        const installed = values.includes("--installed");
+        const global = values.includes("-g") || values.includes("--global");
+        if (global && !installed) {
+            throw new Error(`Unknown option: ${values.includes("-g") ? "-g" : "--global"}`);
+        }
+        return {
+            command: "list",
+            values: [],
+            ...(installed ? { installed } : {}),
+            ...(installed ? { global } : {})
         };
     }
     const option = values.find((value) => value.startsWith("-"));
@@ -173,6 +193,22 @@ export function formatRegistryList(entries) {
         `${pc.dim("Updated:")} ${row.updatedAt}`
     ].join("  "));
     return [pc.bold("Project Skills"), "", ...lines, ""].join("\n");
+}
+export function formatInstalledList(skills, target) {
+    if (!skills.length)
+        return pc.dim(`No installed skills found in ${target}.`);
+    const rows = [...skills]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((skill) => ({
+        name: skill.name,
+        path: skill.absolutePath
+    }));
+    const width = Math.max(...rows.map((row) => row.name.length));
+    const lines = rows.map((row) => [
+        pc.cyan(row.name.padEnd(width)),
+        pc.dim(row.path)
+    ].join("  "));
+    return [pc.bold("Installed Skills"), "", ...lines, ""].join("\n");
 }
 export function listProjectSkills(repo, registry) {
     const skillsRoot = join(repo, "skills");
@@ -277,6 +313,11 @@ async function runCommand(args) {
     }
     const repo = resolveTargetRepo();
     if (args.command === "list") {
+        if (args.installed) {
+            const target = resolveInstallTarget({ global: args.global });
+            console.log(formatInstalledList(discoverInstalledSkills(target), target));
+            return;
+        }
         const registry = readRegistry(repo);
         console.log(formatRegistryList(listProjectSkills(repo, registry)));
         return;
