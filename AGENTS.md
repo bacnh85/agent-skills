@@ -71,13 +71,12 @@ skills/{skill-name}/
 
 ### Spawning `npm` on Windows
 
-- On Windows, `npm` is installed as a `npm.cmd` batch shim. Node's `child_process`
-  (`execFileSync`/`spawnSync`) cannot resolve `npm` directly without `shell: true`
-  or an explicit suffix — it throws `ENOENT`, which silent `catch` blocks turn
-  into "Unable to check latest version." with no diagnostic.
-- Prefer a resolver over `shell: true`: `resolveNpmCommand()` returns `npm.cmd` on
-  `win32` and `npm` elsewhere, then pass it to both `execFileSync` and
-  `spawnSync`. This keeps stdio/control simple and avoids shell-quoting pitfalls.
+- On Windows, `npm` is installed as command shims. Node's `child_process`
+  (`execFileSync`/`spawnSync`) cannot resolve `npm` directly in some shells
+  (`ENOENT`), and executing `npm.cmd` directly can fail with `EINVAL`.
+- Prefer routing Windows npm calls through `cmd.exe /d /s /c` via
+  `createNpmInvocation()`, while using direct `npm` execution on POSIX. Avoid
+  `shell: true` with an args array because Node emits `DEP0190` warnings.
 - When a check fails, surface the underlying reason (e.g. `result.error.message`)
   instead of a bare "Unable to ..." so future platform issues are diagnosable.
 - Detection signal: a feature works on macOS/Linux but fails on Windows with a

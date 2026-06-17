@@ -6,10 +6,12 @@ import {
   UPGRADE_COMMAND,
   checkForUpdate,
   compareVersions,
+  createNpmInvocation,
   installLatestVersion,
   presentUpdate,
   resolveCachePath,
-  resolveNpmCommand
+  resolveNpmCommand,
+  resolveWindowsCommandShell
 } from "../src/version.js";
 
 test("semantic versions compare stable and prerelease releases", () => {
@@ -158,12 +160,28 @@ test("npm command resolves to npm.cmd on Windows and npm elsewhere", () => {
   assert.equal(resolveNpmCommand("linux"), "npm");
 });
 
+test("Windows npm invocations run through cmd.exe", () => {
+  assert.equal(resolveWindowsCommandShell({ ComSpec: "C:\\Windows\\cmd.exe" }), "C:\\Windows\\cmd.exe");
+  assert.deepEqual(
+    createNpmInvocation(
+      ["view", PACKAGE_NAME, "version"],
+      "npm.cmd",
+      "win32",
+      { ComSpec: "C:\\Windows\\cmd.exe" }
+    ),
+    {
+      command: "C:\\Windows\\cmd.exe",
+      args: ["/d", "/s", "/c", `npm.cmd view ${PACKAGE_NAME} version`]
+    }
+  );
+});
+
 test("global upgrade uses npm latest with inherited stdio", () => {
   let invocation: unknown[] = [];
   const status = installLatestVersion((command, args, options) => {
     invocation = [command, args, options];
     return { status: 0 };
-  }, "npm");
+  }, "npm", "linux");
 
   assert.equal(status, 0);
   assert.deepEqual(invocation, [

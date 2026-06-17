@@ -130,15 +130,37 @@ export function readCurrentVersion(): string {
 }
 
 export function resolveNpmCommand(platform: string = process.platform): string {
-  // On Windows, `npm` is installed as a `npm.cmd` batch shim that Node's
-  // child_process cannot resolve without `shell: true` or an explicit suffix.
   return platform === "win32" ? "npm.cmd" : "npm";
 }
 
+export function resolveWindowsCommandShell(
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  return env.ComSpec || "cmd.exe";
+}
+
+function buildNpmCommandLine(command: string, args: string[]): string {
+  return [command, ...args].join(" ");
+}
+
+export function createNpmInvocation(
+  args: string[],
+  command: string = resolveNpmCommand(),
+  platform: string = process.platform,
+  env: NodeJS.ProcessEnv = process.env
+): { command: string; args: string[] } {
+  if (platform !== "win32") return { command, args };
+  return {
+    command: resolveWindowsCommandShell(env),
+    args: ["/d", "/s", "/c", buildNpmCommandLine(command, args)]
+  };
+}
+
 export function queryLatestVersion(): string {
+  const invocation = createNpmInvocation(["view", PACKAGE_NAME, "version"]);
   const output = execFileSync(
-    resolveNpmCommand(),
-    ["view", PACKAGE_NAME, "version"],
+    invocation.command,
+    invocation.args,
     {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
@@ -204,11 +226,17 @@ export function checkForUpdate(
 
 export function installLatestVersion(
   spawn: NpmSpawn = spawnSync,
-  command: string = resolveNpmCommand()
+  command: string = resolveNpmCommand(),
+  platform: string = process.platform
 ): number {
-  const result = spawn(
-    command,
+  const invocation = createNpmInvocation(
     ["install", "-g", `${PACKAGE_NAME}@latest`],
+    command,
+    platform
+  );
+  const result = spawn(
+    invocation.command,
+    invocation.args,
     { stdio: "inherit" }
   );
   return result.error ? 1 : result.status ?? 1;
