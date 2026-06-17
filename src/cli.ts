@@ -26,17 +26,28 @@ import {
 } from "./ui.js";
 import {
   checkForUpdate,
+  installLatestVersion,
   presentUpdate,
-  readCurrentVersion
+  readCurrentVersion,
+  UPGRADE_COMMAND
 } from "./version.js";
 
 export interface Args {
-  command?: "add" | "remove" | "list" | "update" | "install" | "uninstall" | "version";
+  command?:
+    | "add"
+    | "remove"
+    | "list"
+    | "update"
+    | "install"
+    | "uninstall"
+    | "version"
+    | "upgrade";
   values: string[];
   skills?: string[];
   all?: boolean;
   global?: boolean;
   installed?: boolean;
+  yes?: boolean;
 }
 
 export function usage(): string {
@@ -45,6 +56,7 @@ export function usage(): string {
   agent-skills remove [-s|--skill <name>]...
   agent-skills list [--installed] [-g|--global]
   agent-skills version
+  agent-skills upgrade [--yes|-y]
   agent-skills update [-s|--skill <name>]...
   agent-skills install [--all]
   agent-skills uninstall [-s|--skill <name>]... [-g|--global]
@@ -83,7 +95,7 @@ export function parseArgs(argv: string[]): Args {
   if (!argv.length) return { values: [] };
   if (argv[0] === "--help" || argv[0] === "-h") return { values: [] };
   const command = argv[0];
-  if (!["add", "remove", "list", "update", "install", "uninstall", "version"].includes(command)) {
+  if (!["add", "remove", "list", "update", "install", "uninstall", "version", "upgrade"].includes(command)) {
     throw new Error(`Unknown command: ${command}`);
   }
   const values = argv.slice(1);
@@ -162,6 +174,18 @@ export function parseArgs(argv: string[]): Args {
       values: [],
       ...(installed ? { installed } : {}),
       ...(installed ? { global } : {})
+    };
+  }
+  if (command === "upgrade") {
+    const allowed = new Set(["--yes", "-y"]);
+    const option = values.find((value) => value.startsWith("-") && !allowed.has(value));
+    if (option) throw new Error(`Unknown option: ${option}`);
+    const positional = values.find((value) => !value.startsWith("-"));
+    if (positional) throw new Error("agent-skills upgrade does not accept arguments.");
+    return {
+      command: "upgrade",
+      values: [],
+      yes: values.includes("--yes") || values.includes("-y")
     };
   }
   const option = values.find((value) => value.startsWith("-"));
@@ -319,10 +343,18 @@ export function shouldCheckForUpdates(
   return Boolean(
     args.command &&
     args.command !== "version" &&
+    args.command !== "upgrade" &&
     stdoutIsTTY &&
     stdinIsTTY &&
     !env.CI
   );
+}
+
+function interactiveConfirm(): (message: string) => Promise<boolean> {
+  return async (message) => {
+    const answer = await confirm({ message, initialValue: false });
+    return isCancel(answer) ? false : answer;
+  };
 }
 
 async function runCommand(args: Args): Promise<void> {
@@ -338,9 +370,45 @@ async function runCommand(args: Args): Promise<void> {
       console.log("Unable to check latest version.");
     } else if (result.updateAvailable) {
       console.log(`Latest version: ${result.latest} (update available)`);
+      if (process.stdout.isTTY && process.stdin.isTTY && !process.env.CI) {
+        const status = await presentUpdate(result, { confirm: interactiveConfirm() });
+        if (status !== 0) throw new Error("Unable to install the latest version.");
+      } else {
+        console.log(`Update with: ${UPGRADE_COMMAND}`);
+      }
     } else {
       console.log(`Latest version: ${result.latest}`);
     }
+    return;
+  }
+  if (args.command === "upgrade") {
+    const current = readCurrentVersion();
+    const result = checkForUpdate(current, { force: true });
+    if (result.error) {
+      throw new Error(`Unable to check latest version: ${result.error.message}`);
+    }
+    if (!result.updateAvailable) {
+      console.log(`Already up to date: ${current}`);
+      return;
+    }
+    console.log(`Update available: ${current} -> ${result.latest}`);
+    let approved = args.yes ?? false;
+    if (!approved) {
+      if (!process.stdin.isTTY) {
+        throw new Error(
+          "Interactive upgrade requires a TTY. Use --yes for unattended upgrade."
+        );
+      }
+      approved = await interactiveConfirm()(`Upgrade to ${result.latest}?`);
+    }
+    if (!approved) {
+      console.log(`Update later with: ${UPGRADE_COMMAND}`);
+      return;
+    }
+    console.log(`Running: ${UPGRADE_COMMAND}`);
+    const status = installLatestVersion();
+    if (status !== 0) throw new Error("Unable to install the latest version.");
+    console.log(`Upgraded to ${result.latest}.`);
     return;
   }
   const interactive = Boolean(process.stdout.isTTY);
@@ -522,12 +590,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   if (!shouldCheckForUpdates(args)) return;
   const result = checkForUpdate(readCurrentVersion());
   if (!result.updateAvailable) return;
-  const status = await presentUpdate(result, {
-    confirm: async (message) => {
-      const answer = await confirm({ message, initialValue: false });
-      return isCancel(answer) ? false : answer;
-    }
-  });
+  const status = await presentUpdate(result, { confirm: interactiveConfirm() });
   if (status !== 0) throw new Error("Unable to install the latest version.");
 }
 

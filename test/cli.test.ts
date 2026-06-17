@@ -91,6 +91,9 @@ test("parser accepts repository management and install commands", () => {
     global: true
   });
   assert.deepEqual(parseArgs(["version"]), { command: "version", values: [] });
+  assert.deepEqual(parseArgs(["upgrade"]), { command: "upgrade", values: [], yes: false });
+  assert.deepEqual(parseArgs(["upgrade", "--yes"]), { command: "upgrade", values: [], yes: true });
+  assert.deepEqual(parseArgs(["upgrade", "-y"]), { command: "upgrade", values: [], yes: true });
   assert.deepEqual(parseArgs(["update"]), { command: "update", values: [] });
   assert.deepEqual(parseArgs(["update", "--skill", "b", "--skill", "a"]), {
     command: "update",
@@ -166,6 +169,8 @@ test("parser accepts repository management and install commands", () => {
   assert.throws(() => parseArgs(["list", "extra"]), /does not accept arguments/);
   assert.throws(() => parseArgs(["version", "extra"]), /does not accept arguments/);
   assert.throws(() => parseArgs(["version", "--json"]), /Unknown option/);
+  assert.throws(() => parseArgs(["upgrade", "--bogus"]), /Unknown option/);
+  assert.throws(() => parseArgs(["upgrade", "extra"]), /does not accept arguments/);
   assert.throws(() => parseArgs(["install", "--yes"]), /Unknown option/);
   assert.throws(() => parseArgs(["install", "-g"]), /Unknown option: -g/);
   assert.throws(() => parseArgs(["install", "--global"]), /Unknown option: --global/);
@@ -391,8 +396,9 @@ test("uninstall CLI uses repeatable named skill flags for project and global tar
   }
 });
 
-test("usage includes the version command", () => {
+test("usage includes the version and upgrade commands", () => {
   assert.match(usage(), /agent-skills version/);
+  assert.match(usage(), /agent-skills upgrade/);
 });
 
 test("automatic update checks require successful interactive command context", () => {
@@ -404,6 +410,7 @@ test("automatic update checks require successful interactive command context", (
   assert.equal(shouldCheckForUpdates(parseArgs([]), {}, true, true), false);
   assert.equal(shouldCheckForUpdates(parseArgs(["--help"]), {}, true, true), false);
   assert.equal(shouldCheckForUpdates(parseArgs(["version"]), {}, true, true), false);
+  assert.equal(shouldCheckForUpdates(parseArgs(["upgrade"]), {}, true, true), false);
 });
 
 test("registry list sorts entries and aligns labeled fields", () => {

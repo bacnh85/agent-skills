@@ -129,9 +129,15 @@ export function readCurrentVersion(): string {
   throw new Error("Unable to read installed package version.");
 }
 
+export function resolveNpmCommand(platform: string = process.platform): string {
+  // On Windows, `npm` is installed as a `npm.cmd` batch shim that Node's
+  // child_process cannot resolve without `shell: true` or an explicit suffix.
+  return platform === "win32" ? "npm.cmd" : "npm";
+}
+
 export function queryLatestVersion(): string {
   const output = execFileSync(
-    "npm",
+    resolveNpmCommand(),
     ["view", PACKAGE_NAME, "version"],
     {
       encoding: "utf8",
@@ -197,10 +203,11 @@ export function checkForUpdate(
 }
 
 export function installLatestVersion(
-  spawn: NpmSpawn = spawnSync
+  spawn: NpmSpawn = spawnSync,
+  command: string = resolveNpmCommand()
 ): number {
   const result = spawn(
-    "npm",
+    command,
     ["install", "-g", `${PACKAGE_NAME}@latest`],
     { stdio: "inherit" }
   );

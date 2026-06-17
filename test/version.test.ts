@@ -8,7 +8,8 @@ import {
   compareVersions,
   installLatestVersion,
   presentUpdate,
-  resolveCachePath
+  resolveCachePath,
+  resolveNpmCommand
 } from "../src/version.js";
 
 test("semantic versions compare stable and prerelease releases", () => {
@@ -151,12 +152,18 @@ test("approved update invokes the installer and returns its status", async () =>
   assert.equal(UPGRADE_COMMAND, `npm install -g ${PACKAGE_NAME}@latest`);
 });
 
+test("npm command resolves to npm.cmd on Windows and npm elsewhere", () => {
+  assert.equal(resolveNpmCommand("win32"), "npm.cmd");
+  assert.equal(resolveNpmCommand("darwin"), "npm");
+  assert.equal(resolveNpmCommand("linux"), "npm");
+});
+
 test("global upgrade uses npm latest with inherited stdio", () => {
   let invocation: unknown[] = [];
   const status = installLatestVersion((command, args, options) => {
     invocation = [command, args, options];
     return { status: 0 };
-  });
+  }, "npm");
 
   assert.equal(status, 0);
   assert.deepEqual(invocation, [

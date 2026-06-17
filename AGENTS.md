@@ -67,8 +67,27 @@ skills/{skill-name}/
 - Keep `SKILL.md` concise and put large reference material in separate files.
 - Prefer scripts for repeatable workflows; scripts should write status to stderr and machine-readable output to stdout when practical.
 
+## Platform Lessons
+
+### Spawning `npm` on Windows
+
+- On Windows, `npm` is installed as a `npm.cmd` batch shim. Node's `child_process`
+  (`execFileSync`/`spawnSync`) cannot resolve `npm` directly without `shell: true`
+  or an explicit suffix — it throws `ENOENT`, which silent `catch` blocks turn
+  into "Unable to check latest version." with no diagnostic.
+- Prefer a resolver over `shell: true`: `resolveNpmCommand()` returns `npm.cmd` on
+  `win32` and `npm` elsewhere, then pass it to both `execFileSync` and
+  `spawnSync`. This keeps stdio/control simple and avoids shell-quoting pitfalls.
+- When a check fails, surface the underlying reason (e.g. `result.error.message`)
+  instead of a bare "Unable to ..." so future platform issues are diagnosable.
+- Detection signal: a feature works on macOS/Linux but fails on Windows with a
+  silent `ENOENT`-style catch — suspect a missing `.cmd` shim for `npm`/`npx`.
+
 ## Verification Expectations
 
 - For source changes, run `npm run typecheck` or `npm test` depending on scope.
 - For CLI behavior changes, add/update `test/cli.test.ts` or the nearest relevant test and run `npm test`.
 - For registry/skill management changes, verify both success and rollback/error paths when practical.
+- Tests assume POSIX path separators and unprivileged symlinks; on Windows, some
+  integration tests fail on `\` vs `/` and `EPERM` symlink creation. These are
+  pre-existing platform issues, not regressions from version/upgrade work.
