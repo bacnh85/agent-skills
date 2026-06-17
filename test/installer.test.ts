@@ -18,6 +18,7 @@ import {
   installSkills,
   uninstallSkills
 } from "../src/installer.js";
+import { readSkillLock } from "../src/lock.js";
 import type { DiscoveredSkill } from "../src/types.js";
 
 function createSkill(root: string, relativePath: string, name: string, body: string): void {
@@ -93,6 +94,42 @@ test("install atomically replaces selected existing skills", () => {
     assert.equal(result.action, "updated");
     assert.match(readFileSync(join(target, "demo", "SKILL.md"), "utf8"), /new/);
     assert.equal(existsSync(join(target, "demo", "stale.txt")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("install writes lock metadata and discovery enriches installed skills", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-install-lock-"));
+  try {
+    const repo = join(root, "repo");
+    createSkill(repo, "skills/vendor/demo", "demo", "demo");
+    const source = resolveSource(join(repo, "skills"));
+    const target = join(root, "target");
+    const skills = discoverSkills(source);
+
+    installSkills(target, skills, {
+      "vendor/demo": {
+        id: "vendor/demo",
+        vendor: "vendor",
+        name: "demo",
+        source: "https://github.com/vendor/repo.git",
+        sourceType: "git",
+        sourcePath: "skills/vendor/demo",
+        ref: "main",
+        commit: "0123456789abcdef",
+        hash: "hash"
+      }
+    });
+
+    const lock = readSkillLock(target).skills["vendor/demo"];
+    assert.equal(lock.path, "demo");
+    assert.equal(lock.installedAt, lock.updatedAt);
+    assert.equal(discoverInstalledSkills(target)[0].id, "vendor/demo");
+    assert.equal(discoverInstalledSkills(target)[0].source, "https://github.com/vendor/repo.git");
+
+    uninstallSkills(target, ["demo"]);
+    assert.equal(readSkillLock(target).skills["vendor/demo"], undefined);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

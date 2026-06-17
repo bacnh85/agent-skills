@@ -9,6 +9,7 @@ import {
   rmSync
 } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
+import { readSkillLock, lockPathFor, type SkillLockEntry, writeSkillLock } from "./lock.js";
 import { hashDirectory, validateSkill } from "./skill.js";
 import type { DiscoveredSkill, OperationResult } from "./types.js";
 
@@ -40,7 +41,17 @@ export function discoverInstalledSkills(target: string): DiscoveredSkill[] {
     const absolutePath = join(target, entry.name);
     try {
       validateSkill(absolutePath, entry.name, absolutePath);
-      skills.push({ name: entry.name, absolutePath, relativePath: entry.name });
+      const locked = Object.values(readSkillLock(target).skills).find((item) => item.path === entry.name || item.name === entry.name);
+      skills.push({
+        name: entry.name,
+        absolutePath,
+        relativePath: entry.name,
+        id: locked?.id,
+        vendor: locked?.vendor,
+        source: locked?.source,
+        ref: locked?.ref,
+        commit: locked?.commit
+      });
     } catch {
       // Ignore unrelated and malformed directories in the install target.
     }
@@ -81,6 +92,11 @@ export function uninstallSkills(
       moved.push({ source, backup });
     }
     operations.remove(transaction);
+    const lock = readSkillLock(target);
+    for (const [id, entry] of Object.entries(lock.skills)) {
+      if (requested.includes(entry.name) || requested.includes(entry.path)) delete lock.skills[id];
+    }
+    writeSkillLock(target, lock);
     return requested.map((name) => ({
       name,
       action: "removed",
@@ -100,7 +116,8 @@ export function uninstallSkills(
 
 export function installSkills(
   target: string,
-  skills: DiscoveredSkill[]
+  skills: DiscoveredSkill[],
+  metadata: Record<string, Omit<SkillLockEntry, "installedAt" | "updatedAt" | "path">> = {}
 ): OperationResult[] {
   assertUniqueNames(skills);
   mkdirSync(target, { recursive: true });
@@ -133,7 +150,24 @@ export function installSkills(
       installed.push(destination);
     }
 
+    const lock = readSkillLock(target);
+    const now = new Date().toISOString();
+    for (const skill of skills) {
+      const item = metadata[skill.relativePath] ?? metadata[skill.name];
+      if (!item) continue;
+      const previous = lock.skills[item.id];
+      lock.skills[item.id] = {
+        ...item,
+        path: lockPathFor(target, destinationFor(target, skill.name)),
+        installedAt: previous?.installedAt ?? now,
+        updatedAt: now
+      };
+    }
+    writeSkillLock(target, lock);
+
     return skills.map((skill) => ({
+      id: metadata[skill.relativePath]?.id ?? metadata[skill.name]?.id,
+      vendor: metadata[skill.relativePath]?.vendor ?? metadata[skill.name]?.vendor,
       name: skill.name,
       action: existed.has(skill.name) ? "updated" : "added",
       path: destinationFor(target, skill.name)

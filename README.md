@@ -94,43 +94,34 @@ directory as the repository.
 
 ## Install Skills for Agents
 
-Run this command from a project directory to select skills interactively:
+Run this command from a project directory to select skills and choose an
+installation scope interactively:
 
 ```bash
 agent-skills install
 ```
 
-Selected skills are installed in:
+Project-scope skills are installed in:
 
 ```text
 <current-directory>/.agents/skills/
 ```
 
-Install every skill without a prompt:
+Global-scope skills are installed in:
+
+```text
+~/.agents/skills/
+```
+
+Install every skill without skill-selection prompts. In non-interactive
+environments, `--all` installs to project scope:
 
 ```bash
 agent-skills install --all
 ```
 
-Install selected skills for the current user:
-
-```bash
-agent-skills install -g
-agent-skills install --global
-```
-
-Install every skill for the current user:
-
-```bash
-agent-skills install -g --all
-agent-skills install --global --all
-```
-
-Global skills are installed in:
-
-```text
-~/.agents/skills/
-```
+The `install` command no longer accepts `-g` or `--global`; choose global scope
+from the interactive scope prompt.
 
 Installing a selected skill replaces its existing directory with the
 repository version. Skills in the destination that were not selected are left
@@ -193,10 +184,12 @@ agent-skills add vercel-labs/skills -s frontend-design
 agent-skills add vercel-labs/skills --skill frontend-design --skill web-design-guidelines
 ```
 
-A direct skill source or a source containing one skill is selected
-automatically. Sources containing multiple skills open an interactive
-multiselect. Use the repeatable `-s <name>` or `--skill <name>` option to
-select exact `SKILL.md` frontmatter names without interactive input.
+Git sources show clone progress before discovery. A direct skill source or a
+source containing one skill is selected automatically. Sources containing
+multiple skills open an interactive multiselect. Use the repeatable `-s <name>`
+or `--skill <name>` option to select exact `SKILL.md` frontmatter names without
+interactive input. Interactive adds ask for confirmation before writing to the
+curated repository.
 
 ### List
 
@@ -255,7 +248,7 @@ agent-skills remove [-s|--skill <name>]...
 agent-skills list [--installed] [-g|--global]
 agent-skills version
 agent-skills update [-s|--skill <name>]...
-agent-skills install [-g|--global] [--all]
+agent-skills install [--all]
 agent-skills uninstall [-s|--skill <name>]... [-g|--global]
 agent-skills uninstall --all [-g|--global]
 ```
@@ -273,8 +266,9 @@ hash, and timestamps. `skill-history.jsonl` contains append-only `add`,
 `update`, and `remove` events.
 
 These metadata files belong to the curated repository. The `install` command
-copies only skill directories and does not create registry or history files in
-`.agents/skills`.
+copies skill directories and writes `skills-lock.json` in the install target so
+`list --installed` can show vendor/source metadata for installed skills. It does
+not create registry or history files in `.agents/skills`.
 
 Version 1 registries are migrated in memory and written as version 2 on the
 next mutation. Legacy entries without enough source provenance remain listable

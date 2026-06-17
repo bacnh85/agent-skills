@@ -16,10 +16,12 @@ import { addSkills, removeSkills, updateSkills } from "./manager.js";
 import { readRegistry } from "./registry.js";
 import type { DiscoveredSkill, Registry, RegistryEntry } from "./types.js";
 import {
+  confirmOperation,
   formatOperationResult,
   runOperation,
   selectDiscoveredSkills,
   selectInstalledSkills,
+  selectInstallScope,
   selectRegistrySkills
 } from "./ui.js";
 import {
@@ -44,7 +46,7 @@ export function usage(): string {
   agent-skills list [--installed] [-g|--global]
   agent-skills version
   agent-skills update [-s|--skill <name>]...
-  agent-skills install [-g|--global] [--all]
+  agent-skills install [--all]
   agent-skills uninstall [-s|--skill <name>]... [-g|--global]
   agent-skills uninstall --all [-g|--global]`;
 }
@@ -110,7 +112,7 @@ export function parseArgs(argv: string[]): Args {
     };
   }
   if (command === "install") {
-    const allowed = new Set(["-g", "--global", "--all"]);
+    const allowed = new Set(["--all"]);
     const option = values.find((value) => value.startsWith("-") && !allowed.has(value));
     if (option) throw new Error(`Unknown option: ${option}`);
     const positional = values.find((value) => !value.startsWith("-"));
@@ -119,7 +121,7 @@ export function parseArgs(argv: string[]): Args {
       command: "install",
       values: [],
       all: values.includes("--all"),
-      global: values.includes("-g") || values.includes("--global")
+      global: false
     };
   }
   if (command === "uninstall") {
@@ -256,13 +258,19 @@ export function formatInstalledList(skills: DiscoveredSkill[], target: string): 
   const rows = [...skills]
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((skill) => ({
-      name: skill.name,
-      path: skill.absolutePath
+      name: skill.id ?? skill.name,
+      path: skill.absolutePath,
+      source: skill.source || "-",
+      ref: skill.ref || "-",
+      commit: skill.commit?.slice(0, 12) || "-"
     }));
   const width = Math.max(...rows.map((row) => row.name.length));
   const lines = rows.map((row) => [
     pc.cyan(row.name.padEnd(width)),
-    pc.dim(row.path)
+    pc.dim(row.path),
+    `${pc.dim("Source:")} ${row.source}`,
+    `${pc.dim("Ref:")} ${row.ref}`,
+    `${pc.dim("Commit:")} ${row.commit}`
   ].join("  "));
 
   return [pc.bold("Installed Skills"), "", ...lines, ""].join("\n");
@@ -352,14 +360,37 @@ async function runCommand(args: Args): Promise<void> {
         selected = await selectDiscoveredSkills(discovered, "install");
         if (!selected.length) return;
       }
-      const target = resolveInstallTarget({ global: args.global });
+      let global = false;
+      if (process.stdin.isTTY) {
+        const scope = await selectInstallScope();
+        if (!scope) return;
+        global = scope === "global";
+      }
+      const target = resolveInstallTarget({ global });
+      const registry = readRegistry(repo);
+      const metadata = Object.fromEntries(selected.flatMap((skill) => {
+        const entry = Object.values(registry.skills).find((item) => item.path === `skills/${skill.relativePath}`);
+        return entry
+          ? [[skill.relativePath, {
+              id: entry.id,
+              vendor: entry.vendor,
+              name: entry.name,
+              source: entry.source,
+              sourceType: entry.sourceType,
+              sourcePath: entry.sourcePath,
+              ref: entry.ref,
+              commit: entry.commit,
+              hash: entry.hash
+            }]]
+          : [];
+      }));
       const count = selected.length;
       printResults(
         runOperation(
           `Installing ${count} skill${count === 1 ? "" : "s"}...`,
           `Installed ${count} skill${count === 1 ? "" : "s"}`,
           interactive,
-          () => installSkills(target, selected)
+          () => installSkills(target, selected, metadata)
         )
       );
     } finally {
@@ -440,9 +471,12 @@ async function runCommand(args: Args): Promise<void> {
     return;
   }
 
-  const source = resolveSource(args.values[0]);
+  const source = resolveSource(args.values[0], {
+    progress: interactive ? (message) => console.error(pc.dim(message)) : undefined
+  });
   try {
     const discovered = discoverSkills(source);
+    if (interactive) console.error(pc.dim(`Found ${discovered.length} skill${discovered.length === 1 ? "" : "s"}`));
     if (!discovered.length) throw new Error("No skills found in source.");
     let selected = discovered;
     if (args.skills) {
@@ -463,6 +497,12 @@ async function runCommand(args: Args): Promise<void> {
       if (!selected.length) return;
     }
     const count = selected.length;
+    if (interactive) {
+      const proceed = await confirmOperation(
+        `Proceed with adding ${count} skill${count === 1 ? "" : "s"} from ${source.source}?`
+      );
+      if (!proceed) return;
+    }
     printResults(
       runOperation(
         `Adding ${count} skill${count === 1 ? "" : "s"}...`,

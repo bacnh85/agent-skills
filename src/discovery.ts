@@ -83,7 +83,7 @@ export function parseSource(source: string, cwd = process.cwd()): ParsedSource {
 
 export function resolveSource(
   source: string,
-  options: { cwd?: string; execute?: typeof execFileSync } = {}
+  options: { cwd?: string; execute?: typeof execFileSync; progress?: (message: string) => void } = {}
 ): ResolvedSource {
   const parsed = parseSource(source, options.cwd);
   if (parsed.type === "local") {
@@ -99,10 +99,12 @@ export function resolveSource(
   const temporary = mkdtempSync(join(tmpdir(), "agent-skills-source-"));
   const root = join(temporary, "repo");
   try {
-    const args = ["clone", "--quiet", "--depth", "1"];
+    options.progress?.("Cloning repository...");
+    const args = ["clone", "--depth", "1"];
     if (parsed.ref) args.push("--branch", parsed.ref);
     args.push(parsed.cloneUrl!, root);
-    execute("git", args, { stdio: ["ignore", "ignore", "pipe"] });
+    execute("git", args, { stdio: ["ignore", "ignore", options.progress ? "inherit" : "pipe"] });
+    options.progress?.("Repository cloned");
     const commit = String(execute("git", ["-C", root, "rev-parse", "HEAD"], {
       encoding: "utf8"
     })).trim();

@@ -1,6 +1,8 @@
-import { isCancel, multiselect, spinner } from "@clack/prompts";
+import { confirm, isCancel, multiselect, select, spinner } from "@clack/prompts";
 import pc from "picocolors";
 import type { DiscoveredSkill, OperationResult, RegistryEntry } from "./types.js";
+
+export type InstallScope = "project" | "global";
 
 export interface OperationProgress {
   message(message: string): void;
@@ -82,10 +84,27 @@ export async function selectInstalledSkills(
     message: "Select skills to uninstall",
     options: skills.map((skill) => ({
       value: skill.name,
-      label: skill.name,
-      hint: skill.absolutePath
+      label: skill.id ?? skill.name,
+      hint: skill.source ?? skill.absolutePath
     })),
     required: true
   });
   return isCancel(selected) ? [] : selected;
+}
+
+export async function selectInstallScope(): Promise<InstallScope | undefined> {
+  const selected = await select({
+    message: "Installation scope",
+    options: [
+      { value: "project", label: "Project" },
+      { value: "global", label: "Global" }
+    ],
+    initialValue: "project"
+  });
+  return isCancel(selected) ? undefined : selected as InstallScope;
+}
+
+export async function confirmOperation(message: string): Promise<boolean> {
+  const answer = await confirm({ message, initialValue: true });
+  return isCancel(answer) ? false : answer;
 }

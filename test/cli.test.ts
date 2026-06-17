@@ -108,17 +108,11 @@ test("parser accepts repository management and install commands", () => {
     all: false,
     global: false
   });
-  assert.deepEqual(parseArgs(["install", "-g", "--all"]), {
+  assert.deepEqual(parseArgs(["install", "--all"]), {
     command: "install",
     values: [],
     all: true,
-    global: true
-  });
-  assert.deepEqual(parseArgs(["install", "--global", "--all"]), {
-    command: "install",
-    values: [],
-    all: true,
-    global: true
+    global: false
   });
   assert.deepEqual(parseArgs(["uninstall", "--skill", "demo", "-g", "--skill", "notes"]), {
     command: "uninstall",
@@ -173,6 +167,8 @@ test("parser accepts repository management and install commands", () => {
   assert.throws(() => parseArgs(["version", "extra"]), /does not accept arguments/);
   assert.throws(() => parseArgs(["version", "--json"]), /Unknown option/);
   assert.throws(() => parseArgs(["install", "--yes"]), /Unknown option/);
+  assert.throws(() => parseArgs(["install", "-g"]), /Unknown option: -g/);
+  assert.throws(() => parseArgs(["install", "--global"]), /Unknown option: --global/);
   assert.throws(() => parseArgs(["install", "demo"]), /does not accept arguments/);
   assert.throws(() => parseArgs(["uninstall", "--yes"]), /Unknown option/);
   assert.throws(() => parseArgs(["uninstall", "demo"]), /Usage/);
@@ -296,7 +292,7 @@ test("installed list formatter reports empty and sorted installed skills", () =>
     { name: "alpha", absolutePath: "/tmp/alpha", relativePath: "alpha" }
   ], "/tmp/skills"));
 
-  assert.match(output, /^Installed Skills\n\nalpha\s+\/tmp\/alpha\nzeta\s+\/tmp\/zeta/m);
+  assert.match(output, /^Installed Skills\n\nalpha\s+\/tmp\/alpha\s+Source: -\s+Ref: -\s+Commit: -\nzeta\s+\/tmp\/zeta\s+Source: -\s+Ref: -\s+Commit: -/m);
   assert.equal(
     stripAnsi(formatInstalledList([], "/tmp/skills")),
     "No installed skills found in /tmp/skills."

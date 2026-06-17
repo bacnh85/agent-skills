@@ -4,6 +4,11 @@ export interface DiscoveredSkill {
   name: string;
   absolutePath: string;
   relativePath: string;
+  id?: string;
+  vendor?: string;
+  source?: string;
+  ref?: string;
+  commit?: string;
 }
 
 export interface ResolvedSource {
