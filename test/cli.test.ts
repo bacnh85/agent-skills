@@ -222,7 +222,7 @@ function runCli(cwd: string, args: string[], env?: NodeJS.ProcessEnv) {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
-      env: env ? { ...process.env, ...env } : process.env
+      env: { ...process.env, AGENT_SKILLS_REPO: cwd, ...env }
     }
   );
 }

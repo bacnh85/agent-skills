@@ -73,7 +73,23 @@ To persist it for future PowerShell sessions:
 [Environment]::SetEnvironmentVariable("AGENT_SKILLS_REPO", "C:\path\to\agent-skills", "User")
 ```
 
-When the variable is not set, `agent-skills` uses the current working
+You can also set `AGENT_SKILLS_REPO` in dotenv files. The CLI checks these
+locations in order, after the real environment variable:
+
+1. `<current-directory>/.env.local`
+2. `<current-directory>/.env`
+3. `<current-directory>/.agents/.env.local`
+4. `<current-directory>/.agents/.env`
+5. `~/.agents/.env.local`
+6. `~/.agents/.env`
+
+Example:
+
+```env
+AGENT_SKILLS_REPO=/absolute/path/to/agent-skills
+```
+
+When the variable is not set anywhere, `agent-skills` uses the current working
 directory as the repository.
 
 ## Install Skills for Agents
