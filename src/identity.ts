@@ -12,7 +12,12 @@ export function vendorFromSource(source: ResolvedSource | string): string {
 }
 
 export function skillSourcePath(skill: DiscoveredSkill): string {
-  return skill.relativePath === "." ? skill.name : skill.relativePath;
+  if (skill.relativePath === ".") return skill.name;
+  return skill.relativePath
+    .replace(/^skills\//, "")
+    .replace(/^\.agents\/skills\//, "")
+    .replace(/^\.claude\/skills\//, "")
+    .replace(/^\.codex\/skills\//, "");
 }
 
 export function registryPathFor(skill: DiscoveredSkill, source: ResolvedSource): string {

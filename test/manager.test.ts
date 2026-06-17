@@ -39,7 +39,7 @@ function createRootSkill(root: string, name: string, body = "initial"): string {
   return root;
 }
 
-test("add preserves paths, no-ops unchanged sources, rejects conflicts, and records history", () => {
+test("add preserves vendor paths, no-ops unchanged sources, allows same-name sources, and records history", () => {
   const root = mkdtempSync(join(tmpdir(), "agent-skills-add-"));
   try {
     const sourceRoot = join(root, "source");
@@ -48,17 +48,15 @@ test("add preserves paths, no-ops unchanged sources, rejects conflicts, and reco
     const source = resolveSource(sourceRoot);
     const selected = discoverSkills(source);
     assert.equal(addSkills({ repo, source, selected })[0].action, "added");
-    assert.ok(existsSync(join(repo, "skills", "demo", "SKILL.md")));
+    assert.ok(existsSync(join(repo, "skills", "source", "demo", "SKILL.md")));
     assert.equal(addSkills({ repo, source, selected })[0].action, "unchanged");
 
     const otherRoot = join(root, "other");
     createSkill(otherRoot, "demo");
     const other = resolveSource(otherRoot);
-    assert.throws(
-      () => addSkills({ repo, source: other, selected: discoverSkills(other) }),
-      /already registered/
-    );
-    assert.equal(readFileSync(join(repo, "skill-history.jsonl"), "utf8").trim().split("\n").length, 1);
+    assert.equal(addSkills({ repo, source: other, selected: discoverSkills(other) })[0].action, "added");
+    assert.ok(existsSync(join(repo, "skills", "other", "demo", "SKILL.md")));
+    assert.equal(readFileSync(join(repo, "skill-history.jsonl"), "utf8").trim().split("\n").length, 2);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -76,11 +74,11 @@ test("add installs root-level source skills under skills/name and preserves sour
     assert.equal(selected[0].relativePath, ".");
     const added = addSkills({ repo, source, selected })[0];
     assert.equal(added.action, "added");
-    assert.equal(added.path, "skills/demo");
-    assert.ok(existsSync(join(repo, "skills", "demo", "SKILL.md")));
+    assert.equal(added.path, "skills/source/demo");
+    assert.ok(existsSync(join(repo, "skills", "source", "demo", "SKILL.md")));
 
-    const entry = readRegistry(repo).skills.demo;
-    assert.equal(entry.path, "skills/demo");
+    const entry = readRegistry(repo).skills["source/demo"];
+    assert.equal(entry.path, "skills/source/demo");
     assert.equal(entry.sourcePath, ".");
     assert.equal(addSkills({ repo, source, selected })[0].action, "unchanged");
   } finally {
@@ -104,11 +102,11 @@ test("add installs top-level source skill directories under skills/path", () => 
 
     assert.equal(selected[0].relativePath, "brave-search");
     const added = addSkills({ repo, source, selected })[0];
-    assert.equal(added.path, "skills/brave-search");
-    assert.ok(existsSync(join(repo, "skills", "brave-search", "SKILL.md")));
+    assert.equal(added.path, "skills/source/brave-search");
+    assert.ok(existsSync(join(repo, "skills", "source", "brave-search", "SKILL.md")));
 
-    const entry = readRegistry(repo).skills["brave-search"];
-    assert.equal(entry.path, "skills/brave-search");
+    const entry = readRegistry(repo).skills["source/brave-search"];
+    assert.equal(entry.path, "skills/source/brave-search");
     assert.equal(entry.sourcePath, "brave-search");
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -124,7 +122,7 @@ test("remove deletes named skills and writes a remove event", () => {
     const source = resolveSource(sourceRoot);
     addSkills({ repo, source, selected: discoverSkills(source) });
     assert.equal(removeSkills(repo, ["demo"])[0].action, "removed");
-    assert.equal(existsSync(join(repo, "skills", "demo")), false);
+    assert.equal(existsSync(join(repo, "skills", "source", "demo")), false);
     assert.match(readFileSync(join(repo, "skill-history.jsonl"), "utf8"), /"action":"remove"/);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -149,7 +147,7 @@ test("local update handles changed, unchanged, missing, and legacy entries", () 
     assert.equal(updateSkills(repo, ["demo"])[0].action, "skipped");
 
     const registry = readRegistry(repo);
-    registry.skills.demo.updatable = false;
+    registry.skills["source/demo"].updatable = false;
     writeFileSync(join(repo, "skill-registry.json"), JSON.stringify(registry));
     assert.match(updateSkills(repo, ["demo"])[0].message!, /re-added/);
   } finally {
@@ -174,9 +172,9 @@ test("add and update preserve mismatched source directories", () => {
       addSkills({ repo, source, selected: discoverSkills(source) })[0].name,
       "evaluating-llms-harness"
     );
-    const entry = readRegistry(repo).skills["evaluating-llms-harness"];
+    const entry = readRegistry(repo).skills["source/lm-evaluation-harness"];
     assert.equal(entry.sourcePath, "skills/lm-evaluation-harness");
-    assert.ok(existsSync(join(repo, "skills", "lm-evaluation-harness", "SKILL.md")));
+    assert.ok(existsSync(join(repo, "skills", "source", "lm-evaluation-harness", "SKILL.md")));
 
     writeFileSync(join(skillPath, "extra.txt"), "changed");
     assert.equal(updateSkills(repo, ["evaluating-llms-harness"])[0].action, "updated");
@@ -200,7 +198,7 @@ test("update reports progress for each selected skill", () => {
       progress.push(`${name}:${index}/${total}`);
     });
 
-    assert.deepEqual(progress, ["beta:1/2", "alpha:2/2"]);
+    assert.deepEqual(progress, ["source/beta:1/2", "source/alpha:2/2"]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -226,7 +224,7 @@ test("v1 registries migrate in memory and remain removable", () => {
         }
       })
     );
-    assert.equal(readRegistry(root).skills.demo.updatable, false);
+    assert.equal(readRegistry(root).skills["development/demo"].updatable, false);
     removeSkills(root, ["demo"]);
     assert.equal(readRegistry(root).version, 2);
   } finally {
@@ -254,13 +252,13 @@ test("git updates follow the recorded branch to its latest commit", () => {
     } finally {
       source.cleanup();
     }
-    const firstCommit = readRegistry(repo).skills.demo.commit;
+    const firstCommit = readRegistry(repo).skills["upstream/demo"].commit;
 
     writeFileSync(join(skillPath, "extra.txt"), "changed");
     execFileSync("git", ["add", "."], { cwd: upstream });
     execFileSync("git", ["commit", "-m", "change"], { cwd: upstream });
     assert.equal(updateSkills(repo, ["demo"])[0].action, "updated");
-    assert.notEqual(readRegistry(repo).skills.demo.commit, firstCommit);
+    assert.notEqual(readRegistry(repo).skills["upstream/demo"].commit, firstCommit);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

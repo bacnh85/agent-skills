@@ -216,6 +216,15 @@ function createCliRootSkill(root: string, name: string): void {
   );
 }
 
+function createInstalledCliSkill(root: string, name: string): void {
+  const skill = join(root, ".agents", name);
+  mkdirSync(skill, { recursive: true });
+  writeFileSync(
+    join(skill, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${name} skill.\n---\n`
+  );
+}
+
 function runCli(cwd: string, args: string[], env?: NodeJS.ProcessEnv) {
   return spawnSync(
     process.execPath,
@@ -248,15 +257,15 @@ test("add CLI selects one or multiple named skills without a TTY", () => {
     mkdirSync(one);
     const oneResult = runAdd(one, source, ["beta"]);
     assert.equal(oneResult.status, 0, oneResult.stderr);
-    assert.equal(existsSync(join(one, "skills", "alpha-dir")), false);
-    assert.ok(existsSync(join(one, "skills", "beta-dir", "SKILL.md")));
+    assert.equal(existsSync(join(one, "skills", "source", "alpha-dir")), false);
+    assert.ok(existsSync(join(one, "skills", "source", "beta-dir", "SKILL.md")));
 
     const multiple = join(root, "multiple");
     mkdirSync(multiple);
     const multipleResult = runAdd(multiple, source, ["beta", "alpha"]);
     assert.equal(multipleResult.status, 0, multipleResult.stderr);
-    assert.ok(existsSync(join(multiple, "skills", "alpha-dir", "SKILL.md")));
-    assert.ok(existsSync(join(multiple, "skills", "beta-dir", "SKILL.md")));
+    assert.ok(existsSync(join(multiple, "skills", "source", "alpha-dir", "SKILL.md")));
+    assert.ok(existsSync(join(multiple, "skills", "source", "beta-dir", "SKILL.md")));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -272,10 +281,10 @@ test("add CLI installs a top-level local skill under skills/name", () => {
 
     const result = runCli(target, ["add", source, "-s", "root-demo"]);
     assert.equal(result.status, 0, result.stderr);
-    assert.ok(existsSync(join(target, "skills", "root-demo", "SKILL.md")));
+    assert.ok(existsSync(join(target, "skills", "source", "root-demo", "SKILL.md")));
     const registry = JSON.parse(readFileSync(join(target, "skill-registry.json"), "utf8"));
-    assert.equal(registry.skills["root-demo"].path, "skills/root-demo");
-    assert.equal(registry.skills["root-demo"].sourcePath, ".");
+    assert.equal(registry.skills["source/root-demo"].path, "skills/source/root-demo");
+    assert.equal(registry.skills["source/root-demo"].sourcePath, ".");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -341,16 +350,16 @@ test("remove and update CLI use repeatable named skill flags", () => {
     );
     const updated = runCli(target, ["update", "--skill", "alpha"]);
     assert.equal(updated.status, 0, updated.stderr);
-    assert.match(readFileSync(join(target, "skills", "alpha", "SKILL.md"), "utf8"), /updated/);
+    assert.match(readFileSync(join(target, "skills", "source", "alpha", "SKILL.md"), "utf8"), /updated/);
     assert.doesNotMatch(
-      readFileSync(join(target, "skills", "beta", "SKILL.md"), "utf8"),
+      readFileSync(join(target, "skills", "source", "beta", "SKILL.md"), "utf8"),
       /updated/
     );
 
     const removed = runCli(target, ["remove", "--skill", "beta"]);
     assert.equal(removed.status, 0, removed.stderr);
-    assert.ok(existsSync(join(target, "skills", "alpha", "SKILL.md")));
-    assert.equal(existsSync(join(target, "skills", "beta")), false);
+    assert.ok(existsSync(join(target, "skills", "source", "alpha", "SKILL.md")));
+    assert.equal(existsSync(join(target, "skills", "source", "beta")), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -361,17 +370,17 @@ test("uninstall CLI uses repeatable named skill flags for project and global tar
   try {
     const project = join(root, "project");
     mkdirSync(project);
-    createCliSkill(join(project, ".agents"), "alpha", "alpha");
-    createCliSkill(join(project, ".agents"), "beta", "beta");
+    createInstalledCliSkill(project, "alpha");
+    createInstalledCliSkill(project, "beta");
 
     const projectResult = runCli(project, ["uninstall", "--skill", "alpha"]);
     assert.equal(projectResult.status, 0, projectResult.stderr);
-    assert.equal(existsSync(join(project, ".agents", "skills", "alpha")), false);
-    assert.ok(existsSync(join(project, ".agents", "skills", "beta", "SKILL.md")));
+    assert.equal(existsSync(join(project, ".agents", "alpha")), false);
+    assert.ok(existsSync(join(project, ".agents", "beta", "SKILL.md")));
 
     const home = join(root, "home");
-    createCliSkill(join(home, ".agents"), "alpha", "alpha");
-    createCliSkill(join(home, ".agents"), "beta", "beta");
+    createInstalledCliSkill(home, "alpha");
+    createInstalledCliSkill(home, "beta");
 
     const globalResult = runCli(
       project,
@@ -379,8 +388,8 @@ test("uninstall CLI uses repeatable named skill flags for project and global tar
       { HOME: home }
     );
     assert.equal(globalResult.status, 0, globalResult.stderr);
-    assert.ok(existsSync(join(home, ".agents", "skills", "alpha", "SKILL.md")));
-    assert.equal(existsSync(join(home, ".agents", "skills", "beta")), false);
+    assert.ok(existsSync(join(home, ".agents", "alpha", "SKILL.md")));
+    assert.equal(existsSync(join(home, ".agents", "beta")), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -502,19 +511,19 @@ test("list CLI can show project and global installed skills", () => {
   try {
     const project = join(root, "project");
     mkdirSync(project);
-    createCliSkill(join(project, ".agents"), "beta", "beta");
-    createCliSkill(join(project, ".agents"), "alpha", "alpha");
+    createInstalledCliSkill(project, "beta");
+    createInstalledCliSkill(project, "alpha");
 
     const projectResult = runCli(project, ["list", "--installed"]);
     assert.equal(projectResult.status, 0, projectResult.stderr);
     const projectOutput = stripAnsi(projectResult.stdout);
     assert.match(projectOutput, /Installed Skills/);
-    assert.match(projectOutput, /alpha\s+.*\.agents\/skills\/alpha/);
-    assert.match(projectOutput, /beta\s+.*\.agents\/skills\/beta/);
+    assert.match(projectOutput, /alpha\s+.*\.agents\/alpha/);
+    assert.match(projectOutput, /beta\s+.*\.agents\/beta/);
     assert.ok(projectOutput.indexOf("alpha") < projectOutput.indexOf("beta"));
 
     const home = join(root, "home");
-    createCliSkill(join(home, ".agents"), "global-alpha", "global-alpha");
+    createInstalledCliSkill(home, "global-alpha");
     const globalResult = runCli(
       project,
       ["list", "--installed", "--global"],
@@ -523,7 +532,7 @@ test("list CLI can show project and global installed skills", () => {
     assert.equal(globalResult.status, 0, globalResult.stderr);
     assert.match(
       stripAnsi(globalResult.stdout),
-      /global-alpha\s+.*\.agents\/skills\/global-alpha/
+      /global-alpha\s+.*\.agents\/global-alpha/
     );
 
     const globalShortResult = runCli(
@@ -534,14 +543,14 @@ test("list CLI can show project and global installed skills", () => {
     assert.equal(globalShortResult.status, 0, globalShortResult.stderr);
     assert.match(
       stripAnsi(globalShortResult.stdout),
-      /global-alpha\s+.*\.agents\/skills\/global-alpha/
+      /global-alpha\s+.*\.agents\/global-alpha/
     );
 
     const empty = join(root, "empty");
     mkdirSync(empty);
     const emptyResult = runCli(empty, ["list", "--installed"]);
     assert.equal(emptyResult.status, 0, emptyResult.stderr);
-    assert.match(stripAnsi(emptyResult.stdout), /No installed skills found in .*\.agents\/skills\./);
+    assert.match(stripAnsi(emptyResult.stdout), /No installed skills found in .*\.agents\./);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -581,12 +590,7 @@ test("uninstall CLI reports empty targets before requiring interactive input", (
 test("uninstall CLI rejects interactive selection without a TTY", () => {
   const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-uninstall-tty-"));
   try {
-    const skill = join(root, ".agents", "skills", "demo");
-    mkdirSync(skill, { recursive: true });
-    writeFileSync(
-      join(skill, "SKILL.md"),
-      "---\nname: demo\ndescription: Demo skill.\n---\n"
-    );
+    createInstalledCliSkill(root, "demo");
     assert.throws(
       () => execFileSync(process.execPath, [join(process.cwd(), "dist/src/cli.js"), "uninstall"], {
         cwd: root,

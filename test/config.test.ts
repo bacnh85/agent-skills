@@ -68,13 +68,13 @@ test("target repository dotenv parser supports comments, exports, and quotes", (
   }
 });
 
-test("install target resolves project and global skill directories", () => {
+test("install target resolves project and global agent directories", () => {
   assert.equal(
     resolveInstallTarget({ cwd: "/work/project" }),
-    "/work/project/.agents/skills"
+    "/work/project/.agents"
   );
   assert.equal(
     resolveInstallTarget({ global: true, home: "/home/user" }),
-    "/home/user/.agents/skills"
+    "/home/user/.agents"
   );
 });
