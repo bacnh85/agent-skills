@@ -78,5 +78,5 @@ export function resolveInstallTarget(options: {
   const root = options.global
     ? options.home ?? homedir()
     : options.cwd ?? process.cwd();
-  return join(root, ".agents", "skills");
+  return join(root, ".agents");
 }

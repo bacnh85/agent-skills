@@ -24,6 +24,8 @@ function stripAnsi(s: string): string {
 
 function registryEntry(overrides: Partial<RegistryEntry>): RegistryEntry {
   return {
+    id: "example",
+    vendor: "local",
     name: "example",
     path: "skills/example",
     source: "owner/repo",

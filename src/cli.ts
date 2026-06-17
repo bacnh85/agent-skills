@@ -11,6 +11,7 @@ import {
   installSkills,
   uninstallSkills
 } from "./installer.js";
+import { registryPathFor, selectorMatchesEntry } from "./identity.js";
 import { addSkills, removeSkills, updateSkills } from "./manager.js";
 import { readRegistry } from "./registry.js";
 import type { DiscoveredSkill, Registry, RegistryEntry } from "./types.js";
@@ -38,7 +39,7 @@ export interface Args {
 
 export function usage(): string {
   return `Usage:
-  agent-skills add <source> [-s|--skill <name>]...
+  agent-skills add <source> [-s|--skill|--skills <name>]...
   agent-skills remove [-s|--skill <name>]...
   agent-skills list [--installed] [-g|--global]
   agent-skills version
@@ -58,7 +59,7 @@ function parseSkillOptions(values: string[], allowedOptions = new Set<string>())
   const options = new Set<string>();
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
-    if (value === "--skill" || value === "-s") {
+    if (value === "--skill" || value === "--skills" || value === "-s") {
       const name = values[index + 1];
       if (!name || name.startsWith("-")) {
         throw new Error(`${value} requires a value.`);
@@ -175,12 +176,34 @@ export function selectNamedSkills(
 ): DiscoveredSkill[] {
   const selected: DiscoveredSkill[] = [];
   for (const name of requested) {
-    const matches = discovered.filter((skill) => skill.name === name);
+    const normalized = name.replace(/^skills\//, "");
+    const matches = discovered.filter((skill) =>
+      skill.name === name || skill.relativePath === normalized
+    );
     if (!matches.length) throw new Error(`Skill not found: ${name}`);
-    if (matches.length > 1) throw new Error(`Skill name is ambiguous: ${name}`);
+    if (matches.length > 1) {
+      throw new Error(
+        `Skill name is ambiguous: ${name}. Choices: ${matches.map((skill) => skill.relativePath).join(", ")}`
+      );
+    }
     selected.push(matches[0]);
   }
   return selected;
+}
+
+function resolveRegistrySkillSelectors(entries: RegistryEntry[], requested: string[]): string[] {
+  const selected: string[] = [];
+  for (const selector of requested) {
+    const matches = entries.filter((entry) => selectorMatchesEntry(entry, selector));
+    if (!matches.length) throw new Error(`Skill not found: ${selector}`);
+    if (matches.length > 1) {
+      throw new Error(
+        `Skill name is ambiguous: ${selector}. Choices: ${matches.map((entry) => entry.id).join(", ")}`
+      );
+    }
+    selected.push(matches[0].id);
+  }
+  return [...new Set(selected)];
 }
 
 export function isCliEntrypoint(moduleUrl: string, argvPath?: string): boolean {
@@ -256,6 +279,8 @@ export function listProjectSkills(repo: string, registry: Registry): RegistryEnt
         (entry) => entry.path === path
       );
       return registered ?? {
+        id: path.replace(/^skills\//, ""),
+        vendor: path.replace(/^skills\//, "").split("/")[0] ?? "local",
         name: skill.name,
         path,
         source: "",
@@ -393,13 +418,13 @@ async function runCommand(args: Args): Promise<void> {
         `Removing ${count} skill${count === 1 ? "" : "s"}...`,
         `Removed ${count} skill${count === 1 ? "" : "s"}`,
         interactive,
-        () => removeSkills(repo, names)
+        () => removeSkills(repo, resolveRegistrySkillSelectors(Object.values(readRegistry(repo).skills), names))
       )
     );
     return;
   }
   if (args.command === "update") {
-    const names = args.skills ?? [];
+    const names = args.skills ? resolveRegistrySkillSelectors(Object.values(readRegistry(repo).skills), args.skills) : [];
     const count = names.length || Object.keys(readRegistry(repo).skills).length;
     printResults(
       runOperation(
@@ -419,9 +444,15 @@ async function runCommand(args: Args): Promise<void> {
   try {
     const discovered = discoverSkills(source);
     if (!discovered.length) throw new Error("No skills found in source.");
-    let selected = args.skills
-      ? selectNamedSkills(discovered, args.skills)
-      : discovered;
+    let selected = discovered;
+    if (args.skills) {
+      const selectable = discovered.map((skill) => ({
+        ...skill,
+        relativePath: registryPathFor(skill, source).replace(/^skills\//, "")
+      }));
+      const selectedPaths = new Set(selectNamedSkills(selectable, args.skills).map((skill) => skill.absolutePath));
+      selected = discovered.filter((skill) => selectedPaths.has(skill.absolutePath));
+    }
     if (!args.skills && discovered.length > 1) {
       if (!process.stdin.isTTY) {
         throw new Error(

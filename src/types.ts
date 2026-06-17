@@ -17,6 +17,8 @@ export interface ResolvedSource {
 }
 
 export interface RegistryEntry {
+  id: string;
+  vendor: string;
   name: string;
   path: string;
   source: string;
@@ -36,6 +38,8 @@ export interface Registry {
 }
 
 export interface OperationResult {
+  id?: string;
+  vendor?: string;
   name: string;
   action: "added" | "updated" | "removed" | "unchanged" | "skipped";
   message?: string;

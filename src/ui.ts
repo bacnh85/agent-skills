@@ -34,7 +34,8 @@ export function formatOperationResult(result: OperationResult): string {
     unchanged: pc.dim("unchanged"),
     skipped: pc.yellow("skipped")
   }[result.action];
-  return `${action}: ${pc.cyan(result.name)}${result.path ? ` ${pc.dim(`-> ${result.path}`)}` : ""}${result.message ? ` ${pc.dim(`(${result.message})`)}` : ""}`;
+  const label = result.vendor ? `${result.vendor}/${result.name}` : result.name;
+  return `${action}: ${pc.cyan(label)}${result.path ? ` ${pc.dim(`-> ${result.path}`)}` : ""}${result.message ? ` ${pc.dim(`(${result.message})`)}` : ""}`;
 }
 
 export function skillOptions(skills: DiscoveredSkill[]) {
@@ -65,9 +66,9 @@ export async function selectRegistrySkills(
   const selected = await multiselect({
     message: "Select skills to remove",
     options: entries.map((entry) => ({
-      value: entry.name,
+      value: entry.id,
       label: entry.name,
-      hint: entry.path
+      hint: `${entry.vendor} · ${entry.path}`
     })),
     required: true
   });

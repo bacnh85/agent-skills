@@ -7,6 +7,7 @@ import {
   writeFileSync
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { registryIdForPath } from "./identity.js";
 import type { Registry, RegistryEntry } from "./types.js";
 
 interface LegacyEntry {
@@ -20,6 +21,36 @@ interface LegacyEntry {
   updatedAt?: string;
 }
 
+function normalizeEntry(key: string, value: RegistryEntry | LegacyEntry): RegistryEntry {
+  const legacy = value as LegacyEntry;
+  const existing = value as Partial<RegistryEntry>;
+  const name = existing.name ?? legacy.name ?? key;
+  const path = existing.path ?? (legacy.category ? `skills/${legacy.category}/${name}` : `skills/${name}`);
+  const sourceType = existing.sourceType ?? (legacy.sourceType === "local" ? "local" : "git");
+  const id = existing.id ?? registryIdForPath(path);
+  const vendor = existing.vendor ?? id.split("/")[0] ?? "local";
+  const updatable = existing.updatable ?? Boolean(
+    legacy.source &&
+    legacy.hash &&
+    (sourceType === "local" || legacy.sourcePath)
+  );
+  return {
+    id,
+    vendor,
+    name,
+    path,
+    source: existing.source ?? legacy.source ?? "unknown",
+    sourceType,
+    sourcePath: existing.sourcePath ?? legacy.sourcePath?.replace(/\/SKILL\.md$/, ""),
+    ref: existing.ref,
+    commit: existing.commit,
+    hash: existing.hash ?? legacy.hash ?? "",
+    addedAt: existing.addedAt ?? legacy.firstPromotedAt ?? legacy.updatedAt ?? "",
+    updatedAt: existing.updatedAt ?? legacy.updatedAt ?? legacy.firstPromotedAt ?? "",
+    updatable
+  };
+}
+
 export function readRegistry(repo: string): Registry {
   const path = join(repo, "skill-registry.json");
   if (!existsSync(path)) return { version: 2, skills: {} };
@@ -27,30 +58,11 @@ export function readRegistry(repo: string): Registry {
     version?: number;
     skills?: Record<string, RegistryEntry | LegacyEntry>;
   };
-  if (raw.version === 2) return raw as Registry;
 
   const skills: Record<string, RegistryEntry> = {};
   for (const [key, value] of Object.entries(raw.skills ?? {})) {
-    const legacy = value as LegacyEntry;
-    const name = legacy.name ?? key;
-    const path = legacy.category ? `skills/${legacy.category}/${name}` : `skills/${name}`;
-    const sourceType = legacy.sourceType === "local" ? "local" : "git";
-    const updatable = Boolean(
-      legacy.source &&
-      legacy.hash &&
-      (sourceType === "local" || legacy.sourcePath)
-    );
-    skills[name] = {
-      name,
-      path,
-      source: legacy.source ?? "unknown",
-      sourceType,
-      sourcePath: legacy.sourcePath?.replace(/\/SKILL\.md$/, ""),
-      hash: legacy.hash ?? "",
-      addedAt: legacy.firstPromotedAt ?? legacy.updatedAt ?? "",
-      updatedAt: legacy.updatedAt ?? legacy.firstPromotedAt ?? "",
-      updatable
-    };
+    const entry = normalizeEntry(key, value);
+    skills[entry.id] = entry;
   }
   return { version: 2, skills };
 }
