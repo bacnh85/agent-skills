@@ -218,7 +218,7 @@ function createCliRootSkill(root: string, name: string): void {
 }
 
 function createInstalledCliSkill(root: string, name: string): void {
-  const skill = join(root, ".agents", name);
+  const skill = join(root, ".agents", "skills", name);
   mkdirSync(skill, { recursive: true });
   writeFileSync(
     join(skill, "SKILL.md"),
@@ -286,6 +286,20 @@ test("add CLI installs a top-level local skill under skills/name", () => {
     const registry = JSON.parse(readFileSync(join(target, "skill-registry.json"), "utf8"));
     assert.equal(registry.skills["source/root-demo"].path, "skills/source/root-demo");
     assert.equal(registry.skills["source/root-demo"].sourcePath, ".");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("install CLI copies project skills into .agents/skills", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-install-target-"));
+  try {
+    createCliSkill(root, "demo", "demo");
+
+    const result = runCli(root, ["install", "--all"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(existsSync(join(root, ".agents", "skills", "demo", "SKILL.md")));
+    assert.equal(existsSync(join(root, ".agents", "demo")), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -376,8 +390,8 @@ test("uninstall CLI uses repeatable named skill flags for project and global tar
 
     const projectResult = runCli(project, ["uninstall", "--skill", "alpha"]);
     assert.equal(projectResult.status, 0, projectResult.stderr);
-    assert.equal(existsSync(join(project, ".agents", "alpha")), false);
-    assert.ok(existsSync(join(project, ".agents", "beta", "SKILL.md")));
+    assert.equal(existsSync(join(project, ".agents", "skills", "alpha")), false);
+    assert.ok(existsSync(join(project, ".agents", "skills", "beta", "SKILL.md")));
 
     const home = join(root, "home");
     createInstalledCliSkill(home, "alpha");
@@ -389,8 +403,8 @@ test("uninstall CLI uses repeatable named skill flags for project and global tar
       { HOME: home }
     );
     assert.equal(globalResult.status, 0, globalResult.stderr);
-    assert.ok(existsSync(join(home, ".agents", "alpha", "SKILL.md")));
-    assert.equal(existsSync(join(home, ".agents", "beta")), false);
+    assert.ok(existsSync(join(home, ".agents", "skills", "alpha", "SKILL.md")));
+    assert.equal(existsSync(join(home, ".agents", "skills", "beta")), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -521,8 +535,8 @@ test("list CLI can show project and global installed skills", () => {
     assert.equal(projectResult.status, 0, projectResult.stderr);
     const projectOutput = stripAnsi(projectResult.stdout);
     assert.match(projectOutput, /Installed Skills/);
-    assert.match(projectOutput, /alpha\s+.*\.agents\/alpha/);
-    assert.match(projectOutput, /beta\s+.*\.agents\/beta/);
+    assert.match(projectOutput, /alpha\s+.*\.agents\/skills\/alpha/);
+    assert.match(projectOutput, /beta\s+.*\.agents\/skills\/beta/);
     assert.ok(projectOutput.indexOf("alpha") < projectOutput.indexOf("beta"));
 
     const home = join(root, "home");
@@ -535,7 +549,7 @@ test("list CLI can show project and global installed skills", () => {
     assert.equal(globalResult.status, 0, globalResult.stderr);
     assert.match(
       stripAnsi(globalResult.stdout),
-      /global-alpha\s+.*\.agents\/global-alpha/
+      /global-alpha\s+.*\.agents\/skills\/global-alpha/
     );
 
     const globalShortResult = runCli(
@@ -546,14 +560,14 @@ test("list CLI can show project and global installed skills", () => {
     assert.equal(globalShortResult.status, 0, globalShortResult.stderr);
     assert.match(
       stripAnsi(globalShortResult.stdout),
-      /global-alpha\s+.*\.agents\/global-alpha/
+      /global-alpha\s+.*\.agents\/skills\/global-alpha/
     );
 
     const empty = join(root, "empty");
     mkdirSync(empty);
     const emptyResult = runCli(empty, ["list", "--installed"]);
     assert.equal(emptyResult.status, 0, emptyResult.stderr);
-    assert.match(stripAnsi(emptyResult.stdout), /No installed skills found in .*\.agents\./);
+    assert.match(stripAnsi(emptyResult.stdout), /No installed skills found in .*\.agents\/skills\./);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
