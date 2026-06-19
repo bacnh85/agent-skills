@@ -8,18 +8,18 @@ export interface OperationProgress {
   message(message: string): void;
 }
 
-export function runOperation(
+export async function runOperation<T>(
   startMessage: string,
   stopMessage: string,
   interactive: boolean,
-  operation: (progress: OperationProgress) => OperationResult[]
-): OperationResult[] {
-  if (!interactive) return operation({ message() {} });
+  operation: (progress: OperationProgress) => T | Promise<T>
+): Promise<T> {
+  if (!interactive) return await operation({ message() {} });
 
   const progress = spinner();
   progress.start(startMessage);
   try {
-    const results = operation({ message: (message) => progress.message(message) });
+    const results = await operation({ message: (message) => progress.message(message) });
     progress.stop(stopMessage);
     return results;
   } catch (error) {

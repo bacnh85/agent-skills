@@ -454,7 +454,7 @@ async function runCommand(args: Args): Promise<void> {
       }));
       const count = selected.length;
       printResults(
-        runOperation(
+        await runOperation(
           `Installing ${count} skill${count === 1 ? "" : "s"}...`,
           `Installed ${count} skill${count === 1 ? "" : "s"}`,
           interactive,
@@ -482,7 +482,7 @@ async function runCommand(args: Args): Promise<void> {
     }
     const count = names.length;
     printResults(
-      runOperation(
+      await runOperation(
         `Uninstalling ${count} skill${count === 1 ? "" : "s"}...`,
         `Uninstalled ${count} skill${count === 1 ? "" : "s"}`,
         interactive,
@@ -513,7 +513,7 @@ async function runCommand(args: Args): Promise<void> {
     }
     const count = names.length;
     printResults(
-      runOperation(
+      await runOperation(
         `Removing ${count} skill${count === 1 ? "" : "s"}...`,
         `Removed ${count} skill${count === 1 ? "" : "s"}`,
         interactive,
@@ -526,7 +526,7 @@ async function runCommand(args: Args): Promise<void> {
     const names = args.skills ? resolveRegistrySkillSelectors(Object.values(readRegistry(repo).skills), args.skills) : [];
     const count = names.length || Object.keys(readRegistry(repo).skills).length;
     printResults(
-      runOperation(
+      await runOperation(
         `Updating ${count} skill${count === 1 ? "" : "s"}...`,
         `Checked ${count} skill${count === 1 ? "" : "s"}`,
         interactive,
@@ -539,9 +539,14 @@ async function runCommand(args: Args): Promise<void> {
     return;
   }
 
-  const source = resolveSource(args.values[0], {
-    progress: interactive ? (message) => console.error(pc.dim(message)) : undefined
-  });
+  const source = await runOperation(
+    "Cloning repository...",
+    "Repository cloned",
+    interactive,
+    (progress) => resolveSource(args.values[0], {
+      progress: interactive ? (message) => progress.message(message) : undefined
+    })
+  );
   try {
     const discovered = discoverSkills(source);
     if (interactive) console.error(pc.dim(`Found ${discovered.length} skill${discovered.length === 1 ? "" : "s"}`));
@@ -572,7 +577,7 @@ async function runCommand(args: Args): Promise<void> {
       if (!proceed) return;
     }
     printResults(
-      runOperation(
+      await runOperation(
         `Adding ${count} skill${count === 1 ? "" : "s"}...`,
         `Added ${count} skill${count === 1 ? "" : "s"}`,
         interactive,

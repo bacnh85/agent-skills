@@ -28,9 +28,9 @@ test("selection options display declared names for mismatched source directories
   );
 });
 
-test("non-interactive operations run without suppressing progress callbacks", () => {
+test("non-interactive operations run without suppressing progress callbacks", async () => {
   const messages: string[] = [];
-  const results = runOperation("Starting", "Finished", false, (progress) => {
+  const results = await runOperation("Starting", "Finished", false, (progress) => {
     progress.message("Working");
     messages.push("ran");
     return [{ name: "demo", action: "updated", path: "skills/demo" }];
