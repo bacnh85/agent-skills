@@ -531,11 +531,23 @@ async function runCommand(args: Args): Promise<void> {
         `Checked ${count} skill${count === 1 ? "" : "s"}`,
         interactive,
         (progress) =>
-          updateSkills(repo, names, (name, index, total) => {
-            progress.message(`Updating ${name} (${index}/${total})...`);
-          }, (message) => {
-            progress.message(message);  // Forward cloning messages to spinner
-          })
+          updateSkills(
+            repo,
+            names,
+            (name, index, total) => {
+              progress.message(`Updating ${name} (${index}/${total})...`);
+            },
+            undefined,
+            (event) => {
+              if (event.type === "source-message") {
+                progress.message(event.message);
+              } else if (event.type === "source-done") {
+                progress.step(`Repository checked: ${event.source}`);
+              } else if (event.type === "skill-result") {
+                progress.step(`${event.action}: ${event.name}`);
+              }
+            }
+          )
       )
     );
     return;

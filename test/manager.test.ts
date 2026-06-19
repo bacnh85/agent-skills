@@ -204,6 +204,32 @@ test("update reports progress for each selected skill", () => {
   }
 });
 
+test("update groups skills from the same source and emits structured progress", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-update-grouped-"));
+  try {
+    const sourceRoot = join(root, "source");
+    createSkill(sourceRoot, "alpha");
+    createSkill(sourceRoot, "beta");
+    const repo = join(root, "target");
+    const source = resolveSource(sourceRoot);
+    addSkills({ repo, source, selected: discoverSkills(source) });
+    const events: string[] = [];
+
+    updateSkills(repo, ["beta", "alpha"], undefined, undefined, (event) => {
+      if (event.type === "source-done") events.push(`source:${event.count}`);
+      if (event.type === "skill-result") events.push(`result:${event.name}:${event.action}`);
+    });
+
+    assert.deepEqual(events, [
+      "source:2",
+      "result:source/beta:unchanged",
+      "result:source/alpha:unchanged"
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("v1 registries migrate in memory and remain removable", () => {
   const root = mkdtempSync(join(tmpdir(), "agent-skills-v1-"));
   try {

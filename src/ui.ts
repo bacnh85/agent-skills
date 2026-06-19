@@ -1,4 +1,4 @@
-import { confirm, isCancel, multiselect, select, spinner } from "@clack/prompts";
+import { confirm, isCancel, log, multiselect, select, spinner } from "@clack/prompts";
 import pc from "picocolors";
 import type { DiscoveredSkill, OperationResult, RegistryEntry } from "./types.js";
 
@@ -6,6 +6,7 @@ export type InstallScope = "project" | "global";
 
 export interface OperationProgress {
   message(message: string): void;
+  step(message: string): void;
 }
 
 export async function runOperation<T>(
@@ -14,12 +15,15 @@ export async function runOperation<T>(
   interactive: boolean,
   operation: (progress: OperationProgress) => T | Promise<T>
 ): Promise<T> {
-  if (!interactive) return await operation({ message() {} });
+  if (!interactive) return await operation({ message() {}, step() {} });
 
   const progress = spinner();
   progress.start(startMessage);
   try {
-    const results = await operation({ message: (message) => progress.message(message) });
+    const results = await operation({
+      message: (message) => progress.message(message),
+      step: (message) => log.step(message)
+    });
     progress.stop(stopMessage);
     return results;
   } catch (error) {

@@ -221,78 +221,135 @@ export function removeSkills(repo: string, ids: string[]): OperationResult[] {
   }
 }
 
+export type UpdateProgressEvent =
+  | { type: "skill-start"; name: string; index: number; total: number }
+  | { type: "source-start"; source: string; count: number }
+  | { type: "source-message"; source: string; message: string }
+  | { type: "source-done"; source: string; count: number }
+  | { type: "skill-result"; name: string; action: OperationResult["action"] };
+
 export function updateSkills(
   repo: string,
   names?: string[],
   onProgress?: (name: string, index: number, total: number) => void,
-  onCloneProgress?: (message: string) => void
+  onCloneProgress?: (message: string) => void,
+  onEvent?: (event: UpdateProgressEvent) => void
 ): OperationResult[] {
   const registry = readRegistry(repo);
   const selectedNames = names?.length ? resolveRegistryIds(registry, names) : Object.keys(registry.skills);
   const missing = selectedNames.filter((name) => !registry.skills[name]);
   if (missing.length) throw new Error(`Skills not found: ${missing.join(", ")}`);
-  const results: OperationResult[] = [];
+  const resultsByName = new Map<string, OperationResult[]>();
+  const record = (name: string, result: OperationResult): void => {
+    resultsByName.set(name, [...(resultsByName.get(name) ?? []), result]);
+  };
+  const positions = new Map(selectedNames.map((name, index) => [name, index + 1]));
+  const groups = new Map<string, string[]>();
+  const skippedLegacy: string[] = [];
 
-  for (const [index, name] of selectedNames.entries()) {
-    onProgress?.(name, index + 1, selectedNames.length);
-    const previous = registry.skills[name];
-    if (!previous.updatable || !previous.sourcePath) {
-      results.push({
-        id: previous.id,
-        vendor: previous.vendor,
-        name: previous.name,
-        action: "skipped",
-        message: "legacy entry must be re-added before updating"
-      });
+  for (const name of selectedNames) {
+    const entry = registry.skills[name];
+    if (!entry.updatable || !entry.sourcePath) {
+      skippedLegacy.push(name);
       continue;
     }
+    const sourceSpec = entry.sourceType === "git" && entry.ref ? `${entry.source}#${entry.ref}` : entry.source;
+    const key = `${entry.sourceType}\0${sourceSpec}`;
+    groups.set(key, [...(groups.get(key) ?? []), name]);
+  }
+
+  for (const name of skippedLegacy) {
+    const previous = registry.skills[name];
+    onProgress?.(name, positions.get(name)!, selectedNames.length);
+    onEvent?.({ type: "skill-start", name, index: positions.get(name)!, total: selectedNames.length });
+    const result: OperationResult = {
+      id: previous.id,
+      vendor: previous.vendor,
+      name: previous.name,
+      action: "skipped",
+      message: "legacy entry must be re-added before updating"
+    };
+    record(name, result);
+    onEvent?.({ type: "skill-result", name, action: result.action });
+  }
+
+  for (const namesInGroup of groups.values()) {
+    const first = registry.skills[namesInGroup[0]];
+    const sourceSpec = first.sourceType === "git" && first.ref ? `${first.source}#${first.ref}` : first.source;
     let source: ResolvedSource | undefined;
+    let discovered: DiscoveredSkill[] = [];
     try {
-      source = resolveSource(
-        previous.sourceType === "git" && previous.ref
-          ? `${previous.source}#${previous.ref}`
-          : previous.source,
-        { progress: (message) => onCloneProgress?.(`${previous.name}: ${message}`) }
-      );
-      const discovered = discoverSkills(source);
-      const skill = discovered.find(
-        (candidate) => candidate.relativePath === previous.sourcePath
-      );
-      if (!skill) {
-        results.push({ id: previous.id, vendor: previous.vendor, name: previous.name, action: "skipped", message: "source path no longer exists" });
-        continue;
-      }
-      if (skill.name !== previous.name) {
-        results.push({ id: previous.id, vendor: previous.vendor, name: previous.name, action: "skipped", message: "source skill name changed" });
-        continue;
-      }
-      const hash = hashDirectory(skill.absolutePath);
-      if (hash === previous.hash) {
-        results.push({ id: previous.id, vendor: previous.vendor, name: previous.name, action: "unchanged", path: previous.path, hash });
-        continue;
-      }
-      const staged = stageSkills(repo, source, [skill]);
-      try {
-        const entry = staged.entries[0];
-        entry.id = previous.id;
-        entry.vendor = previous.vendor;
-        entry.path = previous.path;
-        entry.addedAt = previous.addedAt;
-        results.push(...commitStaged(repo, registry, [entry], staged.staged, "update"));
-      } finally {
-        rmSync(staged.root, { recursive: true, force: true });
-      }
-    } catch (error) {
-      results.push({
-        id: previous.id,
-        vendor: previous.vendor,
-        name: previous.name,
-        action: "skipped",
-        message: error instanceof Error ? error.message : String(error)
+      onEvent?.({ type: "source-start", source: first.source, count: namesInGroup.length });
+      source = resolveSource(sourceSpec, {
+        progress: (message) => {
+          onCloneProgress?.(message);
+          onEvent?.({ type: "source-message", source: first.source, message });
+        }
       });
+      discovered = discoverSkills(source);
+      onEvent?.({ type: "source-done", source: first.source, count: namesInGroup.length });
+    } catch (error) {
+      for (const name of namesInGroup) {
+        const previous = registry.skills[name];
+        onProgress?.(name, positions.get(name)!, selectedNames.length);
+        onEvent?.({ type: "skill-start", name, index: positions.get(name)!, total: selectedNames.length });
+        const result: OperationResult = {
+          id: previous.id,
+          vendor: previous.vendor,
+          name: previous.name,
+          action: "skipped",
+          message: error instanceof Error ? error.message : String(error)
+        };
+        record(name, result);
+        onEvent?.({ type: "skill-result", name, action: result.action });
+      }
+      continue;
+    }
+
+    try {
+      for (const name of namesInGroup) {
+        onProgress?.(name, positions.get(name)!, selectedNames.length);
+        onEvent?.({ type: "skill-start", name, index: positions.get(name)!, total: selectedNames.length });
+        const previous = registry.skills[name];
+        const skill = discovered.find((candidate) => candidate.relativePath === previous.sourcePath);
+        if (!skill) {
+          const result: OperationResult = { id: previous.id, vendor: previous.vendor, name: previous.name, action: "skipped", message: "source path no longer exists" };
+          record(name, result);
+          onEvent?.({ type: "skill-result", name, action: result.action });
+          continue;
+        }
+        if (skill.name !== previous.name) {
+          const result: OperationResult = { id: previous.id, vendor: previous.vendor, name: previous.name, action: "skipped", message: "source skill name changed" };
+          record(name, result);
+          onEvent?.({ type: "skill-result", name, action: result.action });
+          continue;
+        }
+        const hash = hashDirectory(skill.absolutePath);
+        if (hash === previous.hash) {
+          const result: OperationResult = { id: previous.id, vendor: previous.vendor, name: previous.name, action: "unchanged", path: previous.path, hash };
+          record(name, result);
+          onEvent?.({ type: "skill-result", name, action: result.action });
+          continue;
+        }
+        const staged = stageSkills(repo, source, [skill]);
+        try {
+          const entry = staged.entries[0];
+          const stagedPath = staged.staged.get(entry.id)!;
+          entry.id = previous.id;
+          entry.vendor = previous.vendor;
+          entry.path = previous.path;
+          entry.addedAt = previous.addedAt;
+          staged.staged.set(entry.id, stagedPath);
+          const committed = commitStaged(repo, registry, [entry], staged.staged, "update");
+          for (const result of committed) record(name, result);
+          onEvent?.({ type: "skill-result", name, action: committed[0].action });
+        } finally {
+          rmSync(staged.root, { recursive: true, force: true });
+        }
+      }
     } finally {
       source?.cleanup();
     }
   }
-  return results;
+  return selectedNames.flatMap((name) => resultsByName.get(name) ?? []);
 }
