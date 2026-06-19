@@ -104,7 +104,6 @@ export function resolveSource(
     if (parsed.ref) args.push("--branch", parsed.ref);
     args.push(parsed.cloneUrl!, root);
     execute("git", args, { stdio: ["ignore", "ignore", "pipe"] });
-    options.progress?.("Repository cloned");
     const commit = String(execute("git", ["-C", root, "rev-parse", "HEAD"], {
       encoding: "utf8"
     })).trim();

@@ -252,7 +252,7 @@ export function updateSkills(
         previous.sourceType === "git" && previous.ref
           ? `${previous.source}#${previous.ref}`
           : previous.source,
-        { progress: onCloneProgress }
+        { progress: (message) => onCloneProgress?.(`${previous.name}: ${message}`) }
       );
       const discovered = discoverSkills(source);
       const skill = discovered.find(
