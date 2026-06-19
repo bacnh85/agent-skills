@@ -224,7 +224,8 @@ export function removeSkills(repo: string, ids: string[]): OperationResult[] {
 export function updateSkills(
   repo: string,
   names?: string[],
-  onProgress?: (name: string, index: number, total: number) => void
+  onProgress?: (name: string, index: number, total: number) => void,
+  onCloneProgress?: (message: string) => void
 ): OperationResult[] {
   const registry = readRegistry(repo);
   const selectedNames = names?.length ? resolveRegistryIds(registry, names) : Object.keys(registry.skills);
@@ -250,7 +251,8 @@ export function updateSkills(
       source = resolveSource(
         previous.sourceType === "git" && previous.ref
           ? `${previous.source}#${previous.ref}`
-          : previous.source
+          : previous.source,
+        { progress: onCloneProgress }
       );
       const discovered = discoverSkills(source);
       const skill = discovered.find(

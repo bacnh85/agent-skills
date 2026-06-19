@@ -533,6 +533,8 @@ async function runCommand(args: Args): Promise<void> {
         (progress) =>
           updateSkills(repo, names, (name, index, total) => {
             progress.message(`Updating ${name} (${index}/${total})...`);
+          }, (message) => {
+            progress.message(message);  // Forward cloning messages to spinner
           })
       )
     );
