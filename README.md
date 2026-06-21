@@ -164,6 +164,25 @@ agent-skills uninstall --all -g
 Only valid immediate skill directories are candidates. Uninstall leaves the
 `.agents/skills` directory and all unselected or unrelated entries intact.
 
+## Upgrade Installed Skills
+
+Upgrade installed project-scope skills from the current curated repository:
+
+```bash
+agent-skills upgrade --installed
+```
+
+Upgrade installed global-scope skills from the current curated repository:
+
+```bash
+agent-skills upgrade --installed -g
+agent-skills upgrade --installed --global
+```
+
+This refreshes only skills that are already installed in the selected scope.
+New skills added to the repository are not installed automatically; run
+`agent-skills install` to add them.
+
 ## Manage the Curated Repository
 
 The following commands read and update the repository selected by
@@ -247,6 +266,8 @@ agent-skills add <source> [-s|--skill <name>]...
 agent-skills remove [-s|--skill <name>]...
 agent-skills list [--installed] [-g|--global]
 agent-skills version
+agent-skills upgrade [--yes|-y]
+agent-skills upgrade --installed [-g|--global]
 agent-skills update [-s|--skill <name>]...
 agent-skills install [--all]
 agent-skills uninstall [-s|--skill <name>]... [-g|--global]

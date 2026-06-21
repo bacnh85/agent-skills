@@ -14,7 +14,7 @@ import {
 import { registryPathFor, selectorMatchesEntry } from "./identity.js";
 import { addSkills, removeSkills, updateSkills } from "./manager.js";
 import { readRegistry } from "./registry.js";
-import type { DiscoveredSkill, Registry, RegistryEntry } from "./types.js";
+import type { DiscoveredSkill, OperationResult, Registry, RegistryEntry } from "./types.js";
 import {
   confirmOperation,
   formatOperationResult,
@@ -57,6 +57,7 @@ export function usage(): string {
   agent-skills list [--installed] [-g|--global]
   agent-skills version
   agent-skills upgrade [--yes|-y]
+  agent-skills upgrade --installed [-g|--global]
   agent-skills update [-s|--skill <name>]...
   agent-skills install [--all]
   agent-skills uninstall [-s|--skill <name>]... [-g|--global]
@@ -177,15 +178,21 @@ export function parseArgs(argv: string[]): Args {
     };
   }
   if (command === "upgrade") {
-    const allowed = new Set(["--yes", "-y"]);
+    const allowed = new Set(["--yes", "-y", "--installed", "-g", "--global"]);
     const option = values.find((value) => value.startsWith("-") && !allowed.has(value));
     if (option) throw new Error(`Unknown option: ${option}`);
     const positional = values.find((value) => !value.startsWith("-"));
     if (positional) throw new Error("agent-skills upgrade does not accept arguments.");
+    const installed = values.includes("--installed");
+    const global = values.includes("-g") || values.includes("--global");
+    if (global && !installed) {
+      throw new Error(`Unknown option: ${values.includes("-g") ? "-g" : "--global"}`);
+    }
     return {
       command: "upgrade",
       values: [],
-      yes: values.includes("--yes") || values.includes("-y")
+      yes: values.includes("--yes") || values.includes("-y"),
+      ...(installed ? { installed, global } : {})
     };
   }
   const option = values.find((value) => value.startsWith("-"));
@@ -328,10 +335,59 @@ export function listProjectSkills(repo: string, registry: Registry): RegistryEnt
   }
 }
 
-function printResults(results: ReturnType<typeof addSkills>): void {
+function printResults(results: OperationResult[]): void {
   for (const result of results) {
     console.log(formatOperationResult(result));
   }
+}
+
+function lockMetadataFor(entries: RegistryEntry[], skills: DiscoveredSkill[]) {
+  return Object.fromEntries(skills.flatMap((skill) => {
+    const entry = entries.find((item) => item.path === `skills/${skill.relativePath}`);
+    return entry
+      ? [[skill.relativePath, {
+          id: entry.id,
+          vendor: entry.vendor,
+          name: entry.name,
+          source: entry.source,
+          sourceType: entry.sourceType,
+          sourcePath: entry.sourcePath,
+          ref: entry.ref,
+          commit: entry.commit,
+          hash: entry.hash
+        }]]
+      : [];
+  }));
+}
+
+export function selectInstalledUpgradeSkills(
+  installed: DiscoveredSkill[],
+  repositorySkills: DiscoveredSkill[],
+  registry: Registry
+): { selected: DiscoveredSkill[]; skipped: OperationResult[] } {
+  const entries = Object.values(registry.skills);
+  const selected: DiscoveredSkill[] = [];
+  const skipped: OperationResult[] = [];
+  for (const skill of installed) {
+    const match = repositorySkills.find((candidate) => {
+      const path = `skills/${candidate.relativePath}`;
+      const entry = entries.find((item) => item.path === path);
+      return (skill.id && entry?.id === skill.id) || candidate.name === skill.name;
+    });
+    if (match) {
+      selected.push(match);
+    } else {
+      skipped.push({
+        id: skill.id,
+        vendor: skill.vendor,
+        name: skill.name,
+        action: "skipped",
+        path: skill.absolutePath,
+        message: "not found in repository"
+      });
+    }
+  }
+  return { selected, skipped };
 }
 
 export function shouldCheckForUpdates(
@@ -382,6 +438,38 @@ async function runCommand(args: Args): Promise<void> {
     return;
   }
   if (args.command === "upgrade") {
+    if (args.installed) {
+      const interactive = Boolean(process.stdout.isTTY);
+      const repo = resolveTargetRepo();
+      const target = resolveInstallTarget({ global: args.global });
+      const installed = discoverInstalledSkills(target);
+      if (!installed.length) throw new Error(`No installed skills found in ${target}.`);
+      const source = resolveSource(join(repo, "skills"));
+      try {
+        const repositorySkills = discoverSkills(source);
+        const registry = readRegistry(repo);
+        const { selected, skipped } = selectInstalledUpgradeSkills(installed, repositorySkills, registry);
+        const metadata = lockMetadataFor(Object.values(registry.skills), selected);
+        const count = selected.length;
+        const upgraded = count
+          ? await runOperation(
+              `Upgrading ${count} installed skill${count === 1 ? "" : "s"}...`,
+              `Upgraded ${count} installed skill${count === 1 ? "" : "s"}`,
+              interactive,
+              () => installSkills(target, selected, metadata)
+            )
+          : [];
+        printResults([...upgraded, ...skipped]);
+        const installedNames = new Set(installed.map((skill) => skill.name));
+        const newSkills = repositorySkills.filter((skill) => !installedNames.has(skill.name));
+        if (newSkills.length) {
+          console.log(pc.dim(`New repository skills are available. Run agent-skills install to add them.`));
+        }
+      } finally {
+        source.cleanup();
+      }
+      return;
+    }
     const current = readCurrentVersion();
     const result = checkForUpdate(current, { force: true });
     if (result.error) {
@@ -436,22 +524,7 @@ async function runCommand(args: Args): Promise<void> {
       }
       const target = resolveInstallTarget({ global });
       const registry = readRegistry(repo);
-      const metadata = Object.fromEntries(selected.flatMap((skill) => {
-        const entry = Object.values(registry.skills).find((item) => item.path === `skills/${skill.relativePath}`);
-        return entry
-          ? [[skill.relativePath, {
-              id: entry.id,
-              vendor: entry.vendor,
-              name: entry.name,
-              source: entry.source,
-              sourceType: entry.sourceType,
-              sourcePath: entry.sourcePath,
-              ref: entry.ref,
-              commit: entry.commit,
-              hash: entry.hash
-            }]]
-          : [];
-      }));
+      const metadata = lockMetadataFor(Object.values(registry.skills), selected);
       const count = selected.length;
       printResults(
         await runOperation(

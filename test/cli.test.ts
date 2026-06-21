@@ -94,6 +94,27 @@ test("parser accepts repository management and install commands", () => {
   assert.deepEqual(parseArgs(["upgrade"]), { command: "upgrade", values: [], yes: false });
   assert.deepEqual(parseArgs(["upgrade", "--yes"]), { command: "upgrade", values: [], yes: true });
   assert.deepEqual(parseArgs(["upgrade", "-y"]), { command: "upgrade", values: [], yes: true });
+  assert.deepEqual(parseArgs(["upgrade", "--installed"]), {
+    command: "upgrade",
+    values: [],
+    yes: false,
+    installed: true,
+    global: false
+  });
+  assert.deepEqual(parseArgs(["upgrade", "--installed", "--global"]), {
+    command: "upgrade",
+    values: [],
+    yes: false,
+    installed: true,
+    global: true
+  });
+  assert.deepEqual(parseArgs(["upgrade", "--installed", "-g"]), {
+    command: "upgrade",
+    values: [],
+    yes: false,
+    installed: true,
+    global: true
+  });
   assert.deepEqual(parseArgs(["update"]), { command: "update", values: [] });
   assert.deepEqual(parseArgs(["update", "--skill", "b", "--skill", "a"]), {
     command: "update",
@@ -170,6 +191,8 @@ test("parser accepts repository management and install commands", () => {
   assert.throws(() => parseArgs(["version", "extra"]), /does not accept arguments/);
   assert.throws(() => parseArgs(["version", "--json"]), /Unknown option/);
   assert.throws(() => parseArgs(["upgrade", "--bogus"]), /Unknown option/);
+  assert.throws(() => parseArgs(["upgrade", "--global"]), /Unknown option: --global/);
+  assert.throws(() => parseArgs(["upgrade", "-g"]), /Unknown option: -g/);
   assert.throws(() => parseArgs(["upgrade", "extra"]), /does not accept arguments/);
   assert.throws(() => parseArgs(["install", "--yes"]), /Unknown option/);
   assert.throws(() => parseArgs(["install", "-g"]), /Unknown option: -g/);
@@ -300,6 +323,68 @@ test("install CLI copies project skills into .agents/skills", () => {
     assert.equal(result.status, 0, result.stderr);
     assert.ok(existsSync(join(root, ".agents", "skills", "demo", "SKILL.md")));
     assert.equal(existsSync(join(root, ".agents", "demo")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("upgrade --installed refreshes project installed skills from repository", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-upgrade-installed-"));
+  try {
+    const source = join(root, "source");
+    createCliSkill(source, "alpha", "alpha");
+    const repo = join(root, "repo");
+    mkdirSync(repo);
+    assert.equal(runAdd(repo, source, ["alpha"]).status, 0);
+    assert.equal(runCli(repo, ["install", "--all"]).status, 0);
+
+    writeFileSync(
+      join(repo, "skills", "source", "alpha", "SKILL.md"),
+      "---\nname: alpha\ndescription: alpha skill.\n---\n\nupgraded\n"
+    );
+    const result = runCli(repo, ["upgrade", "--installed"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(stripAnsi(result.stdout), /updated: .*alpha/);
+    assert.match(readFileSync(join(repo, ".agents", "skills", "alpha", "SKILL.md"), "utf8"), /upgraded/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("upgrade --installed --global refreshes global installed skills", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-upgrade-global-"));
+  try {
+    const source = join(root, "source");
+    createCliSkill(source, "alpha", "alpha");
+    const repo = join(root, "repo");
+    const home = join(root, "home");
+    mkdirSync(repo);
+    mkdirSync(home);
+    assert.equal(runAdd(repo, source, ["alpha"]).status, 0);
+    createInstalledCliSkill(home, "alpha");
+
+    writeFileSync(
+      join(repo, "skills", "source", "alpha", "SKILL.md"),
+      "---\nname: alpha\ndescription: alpha skill.\n---\n\nglobal upgraded\n"
+    );
+    const result = runCli(repo, ["upgrade", "--installed", "--global"], { HOME: home });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(stripAnsi(result.stdout), /updated: .*alpha/);
+    assert.match(readFileSync(join(home, ".agents", "skills", "alpha", "SKILL.md"), "utf8"), /global upgraded/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("upgrade --installed reports missing installed skills without removing them", () => {
+  const root = mkdtempSync(join(tmpdir(), "agent-skills-cli-upgrade-missing-"));
+  try {
+    mkdirSync(join(root, "skills"), { recursive: true });
+    createInstalledCliSkill(root, "orphan");
+    const result = runCli(root, ["upgrade", "--installed"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(stripAnsi(result.stdout), /skipped: orphan .*not found in repository/);
+    assert.equal(existsSync(join(root, ".agents", "skills", "orphan", "SKILL.md")), true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
